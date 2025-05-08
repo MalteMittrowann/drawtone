@@ -1,31 +1,23 @@
+from datetime import datetime
 import cv2
 from image_analysis import berechne_durchschnittshelligkeit
 import time
 import os
 
 def main():
-    cap = cv2.VideoCapture(1, cv2.CAP_DSHOW)
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
 
-    cap.set(cv2.CAP_PROP_EXPOSURE, 0)  # Je nach Kamera kann das positiv oder negativ sein
-    cap.set(cv2.CAP_PROP_BRIGHTNESS, 100)
-    cap.set(cv2.CAP_PROP_CONTRAST, 50)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-
-    time.sleep(2)  # Kamera "warmlaufen" lassen
+    #cap.set(cv2.CAP_PROP_EXPOSURE, 0)
+    #cap.set(cv2.CAP_PROP_BRIGHTNESS, 0)
+    #cap.set(cv2.CAP_PROP_CONTRAST, 0)
 
     if not cap.isOpened():
         print("Fehler: Kamera konnte nicht geöffnet werden.")
         return
-    
-    for _ in range(5):  # 5 Dummy-Frames überspringen
-        cap.read()
 
     ret, frame = cap.read()
     if ret:
         cv2.imshow("Vorschau", frame)
-        cv2.imwrite("testbild.jpg", frame)
-        print("Bild gespeichert als testbild.jpg")
         cv2.waitKey(0)
         cv2.destroyAllWindows()
     else:

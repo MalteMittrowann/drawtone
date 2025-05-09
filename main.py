@@ -5,16 +5,31 @@ import time
 import os
 
 def main():
-    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW) # (int ID, int apiPreference)
 
-    #cap.set(cv2.CAP_PROP_EXPOSURE, 0)
-    #cap.set(cv2.CAP_PROP_BRIGHTNESS, 0)
-    #cap.set(cv2.CAP_PROP_CONTRAST, 0)
+    #----------------------- Kamera-Kalibierung -----------------------------------#
+    cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.75) # 0.25 = manuell (abhängig vom Backend), 0.75 = automatisch
+    cap.set(cv2.CAP_PROP_EXPOSURE, -6.0) # Kalibriert auf -6.0
+    cap.set(cv2.CAP_PROP_BRIGHTNESS, 0.0) # Kalibiert auf 0.0
+    cap.set(cv2.CAP_PROP_CONTRAST, 32) # Kalibriert auf 32
 
+    # Dimensionen des Fotos einrichten:
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+
+    #------------------------ Aufnahme vorbereiten --------------------------------#
     if not cap.isOpened():
         print("Fehler: Kamera konnte nicht geöffnet werden.")
         return
 
+    # 1–2 Sekunden warten, damit die Kamera sich anpassen kann
+    time.sleep(2)
+
+    # Einige Frames "puffern" (Kamera justieren lassen)
+    for _ in range(10):
+        cap.read()
+
+    #------------------------- Live-Vorschau --------------------------------------#
     ret, frame = cap.read()
     if ret:
         cv2.imshow("Vorschau", frame)
@@ -29,6 +44,7 @@ def main():
         print("Fehler: Bild konnte nicht aufgenommen werden.")
         return
 
+    #-------------------------- Bild abspeichern ----------------------------------#
     # Ordnerpfad definieren
     ordner = "captured_images/tests"
     os.makedirs(ordner, exist_ok=True)  # Ordner anlegen, falls nicht vorhanden
@@ -41,9 +57,11 @@ def main():
     cv2.imwrite(dateiname, frame)
     print(f"Bild gespeichert als: {dateiname}")
 
+    #--------------------------- Bild-Analyse -------------------------------------#
     # Bild analysieren
     helligkeit = berechne_durchschnittshelligkeit(frame)
     print(f"Durchschnittliche Helligkeit: {helligkeit}")
 
+    #--------------------------- Main-Program -------------------------------------#
 if __name__ == "__main__":
     main()

@@ -1,7 +1,7 @@
 import cv2
 
 # Kamera starten
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
 
 # Setze manuelle Belichtungssteuerung, falls unterstützt
 cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.25)  # 0.25 = manuell, 0.75 = automatisch
@@ -56,11 +56,13 @@ while True:
     elif key == ord('e'):
         contrast += step
         cap.set(cv2.CAP_PROP_CONTRAST, contrast)
+    elif key == ord('x'):
+        # Anzeigen der aktuellen Werte
+        print(f"\rExposure: {cap.get(cv2.CAP_PROP_EXPOSURE):>6.2f} | "
+            f"Brightness: {cap.get(cv2.CAP_PROP_BRIGHTNESS):>6.2f} | "
+            f"Contrast: {cap.get(cv2.CAP_PROP_CONTRAST):>6.2f}", end='')
 
-    # Anzeigen der aktuellen Werte
-    print(f"\rExposure: {cap.get(cv2.CAP_PROP_EXPOSURE):>6.2f} | "
-          f"Brightness: {cap.get(cv2.CAP_PROP_BRIGHTNESS):>6.2f} | "
-          f"Contrast: {cap.get(cv2.CAP_PROP_CONTRAST):>6.2f}", end='')
+
 
 cap.release()
 cv2.destroyAllWindows()

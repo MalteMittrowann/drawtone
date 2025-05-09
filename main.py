@@ -1,6 +1,6 @@
 from datetime import datetime
 import cv2
-from image_analysis import berechne_durchschnittshelligkeit
+from image_analysis import berechne_durchschnittshelligkeit, berechne_farbanteile
 import time
 import os
 
@@ -61,6 +61,12 @@ def main():
     # Bild analysieren
     helligkeit = berechne_durchschnittshelligkeit(frame)
     print(f"Durchschnittliche Helligkeit: {helligkeit}")
+
+    # Farbanteile berechnen
+    farbanteile = berechne_farbanteile(frame)
+    print("🎨 Farbanteile:")
+    for farbe, anteil in farbanteile.items():
+        print(f"  {farbe}: {anteil:.3f}")
 
     #--------------------------- Main-Program -------------------------------------#
 if __name__ == "__main__":

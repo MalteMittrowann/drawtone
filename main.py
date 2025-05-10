@@ -1,73 +1,80 @@
-from datetime import datetime
+from pythonosc.udp_client import SimpleUDPClient
 import cv2
-from image_analysis import berechne_durchschnittshelligkeit, berechne_farbanteile
-import time
+from datetime import datetime
 import os
+import time
+from image_analysis import berechne_durchschnittshelligkeit, berechne_farbanteile, berechne_segmentierungsgrad, berechne_frequenz_index
+
+# OSC-Ziel konfigurieren
+osc_ip = "192.168.1.100"  # <-- hier die IP-Adresse des Empfänger-Computers eintragen
+osc_port = 8000
+client = SimpleUDPClient(osc_ip, osc_port)
+
+def sende_osc_daten(helligkeit, farbanteile):
+    client.send_message("/helligkeit", float(helligkeit))
+    for farbe, anteil in farbanteile.items():
+        client.send_message(f"/farbe/{farbe}", float(anteil))
 
 def main():
-    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW) # (int ID, int apiPreference)
+    cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
 
     #----------------------- Kamera-Kalibierung -----------------------------------#
-    cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.75) # 0.25 = manuell (abhängig vom Backend), 0.75 = automatisch
-    cap.set(cv2.CAP_PROP_EXPOSURE, -6.0) # Kalibriert auf -6.0
-    cap.set(cv2.CAP_PROP_BRIGHTNESS, 0.0) # Kalibiert auf 0.0
-    cap.set(cv2.CAP_PROP_CONTRAST, 32) # Kalibriert auf 32
-
-    # Dimensionen des Fotos einrichten:
+    cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.75)
+    cap.set(cv2.CAP_PROP_EXPOSURE, -6.0)
+    cap.set(cv2.CAP_PROP_BRIGHTNESS, 0.0)
+    cap.set(cv2.CAP_PROP_CONTRAST, 32)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
-    #------------------------ Aufnahme vorbereiten --------------------------------#
     if not cap.isOpened():
         print("Fehler: Kamera konnte nicht geöffnet werden.")
         return
 
-    # 1–2 Sekunden warten, damit die Kamera sich anpassen kann
-    time.sleep(2)
+    print("Drücke [Leertaste], um ein Bild aufzunehmen. Drücke [q], um zu beenden.")
 
-    # Einige Frames "puffern" (Kamera justieren lassen)
-    for _ in range(10):
-        cap.read()
+    #-------------------------- Aufnahme starten mit Vorschau ----------------------------#
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("Kein Bild erhalten.")
+            break
 
-    #------------------------- Live-Vorschau --------------------------------------#
-    ret, frame = cap.read()
-    if ret:
-        cv2.imshow("Vorschau", frame)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
-    else:
-        print("Kein Bild erhalten.")
+        cv2.imshow("Live-Vorschau", frame)
+        key = cv2.waitKey(1)
 
-    cap.release()
+    #------------------------------- Bild abspeichern ------------------------------------#
+        if key == ord(" "):  # Leertaste gedrückt
+            
+            timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
-    if not ret:
-        print("Fehler: Bild konnte nicht aufgenommen werden.")
-        return
+            # Basisverzeichnis (Verzeichnis, in dem main.py liegt)
+            basisverzeichnis = os.path.dirname(os.path.abspath(__file__))
 
-    #-------------------------- Bild abspeichern ----------------------------------#
-    # Ordnerpfad definieren
-    ordner = "captured_images/tests"
-    os.makedirs(ordner, exist_ok=True)  # Ordner anlegen, falls nicht vorhanden
+            # Zielordner relativ zu main.py
+            ordner = os.path.join(basisverzeichnis, "captured_images", "tests")
+            os.makedirs(ordner, exist_ok=True)
 
-    # Zeitstempel erzeugen
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    dateiname = os.path.join(ordner, f"aufnahme_{timestamp}.jpg")
-
-    # Bild abspeichern mit Zeitstempel
-    cv2.imwrite(dateiname, frame)
-    print(f"Bild gespeichert als: {dateiname}")
+            dateiname = os.path.join(ordner, f"aufnahme_{timestamp}.jpg")
+            cv2.imwrite(dateiname, frame)
+            print(f"📸 Bild gespeichert als: {dateiname}")
 
     #--------------------------- Bild-Analyse -------------------------------------#
-    # Bild analysieren
-    helligkeit = berechne_durchschnittshelligkeit(frame)
-    print(f"Durchschnittliche Helligkeit: {helligkeit}")
+            helligkeit = berechne_durchschnittshelligkeit(frame)
+            farbanteile = berechne_farbanteile(frame)
 
-    # Farbanteile berechnen
-    farbanteile = berechne_farbanteile(frame)
-    print("🎨 Farbanteile:")
-    for farbe, anteil in farbanteile.items():
-        print(f"  {farbe}: {anteil:.3f}")
+            print(f"Durchschnittliche Helligkeit: {helligkeit:.2f}")
+            print("🎨 Farbanteile:")
+            for farbe, anteil in farbanteile.items():
+                print(f"  {farbe}: {anteil:.3f}")
 
-    #--------------------------- Main-Program -------------------------------------#
+            sende_osc_daten(helligkeit, farbanteile)
+
+        elif key == ord("q"):
+            print("Programm beendet.")
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
+
 if __name__ == "__main__":
     main()

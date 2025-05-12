@@ -1,0 +1,11 @@
+opencv-python
+numpy
+Pillow
+python-osc
+torch
+torchvision
+git+https://github.com/openai/CLIP.git
+ftfy
+regex
+tqdm
+matplotlib

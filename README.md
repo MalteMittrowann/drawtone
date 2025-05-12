@@ -27,3 +27,7 @@ Otherwise the music is completely controlled by the pictures that people draw.
 
 Kompakt:
 pip install opencv-python numpy Pillow python-osc torch torchvision git+https://github.com/openai/CLIP.git ftfy regex tqdm matplotlib
+
+or
+
+pip install -r requirements.txt

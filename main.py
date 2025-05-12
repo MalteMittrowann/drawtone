@@ -3,8 +3,8 @@ import cv2
 from datetime import datetime
 import os
 import time
-from image_analysis import berechne_durchschnittshelligkeit, berechne_farbanteile, berechne_segmentierungsgrad, berechne_frequenz_index
-
+from image_analysis import berechne_durchschnittshelligkeit, berechne_farbanteile, berechne_segmentierungsgrad, berechne_frequenz_index, berechne_farbharmonie, berechne_bildrausch_index
+from image_classification import klassifiziere_bild_clip
 #----------------------------- OSC-Send-Modul -------------------------------------#
 osc_ip = "10.40.35.127"  # <-- hier die IP-Adresse des Empfänger-Computers eintragen
 osc_port = 8000
@@ -42,10 +42,9 @@ def apply_settings(cap):
 
 #-------------------------------- Main-Function -------------------------------------#
 def main():
-    global exposure, brightness, contrast, wb_temp, temp, auto_wb
+    global exposure, brightness, contrast, temp, auto_wb
 
     cap = cv2.VideoCapture(0, cv2.CAP_MSMF)
-    cap.set(cv2.CAP_PROP_SETTINGS, 0)
 
     #---- Format ----#
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
@@ -59,7 +58,7 @@ def main():
     apply_settings(cap)
 
     print("Druecke LEERTASTE für Bildaufnahme, ESC zum Beenden.")
-    print("W/S: Exposure | E/D: Brightness | R/F: Contrast | T/G: Farbtemperatur | A: Auto-WB | Y: Camera control panel")
+    print("W/S: Exposure | E/D: Brightness | R/F: Contrast | T/G: Farbtemperatur | A: Auto-WB")
 
     #-------------------------- Aufnahme starten mit Vorschau ----------------------------#
     while True:
@@ -95,17 +94,15 @@ def main():
             contrast -= 1.0
             print(f"Contrast: {contrast:.2f}")
         elif key == ord('t'):
-            wb_temp = min(temp + 200, 20000)
-            print(f"WB-Temp: {wb_temp:.2f}")
+            temp = min(temp + 200, 20000)
+            print(f"WB-Temp: {temp:.2f}")
         elif key == ord('g'):
-            wb_temp = max(temp - 200, 0)
-            print(f"WB-Temp: {wb_temp:.2f}")
+            temp = max(temp - 200, 0)
+            print(f"WB-Temp: {temp:.2f}")
         elif key == ord('a'):
             auto_wb = not auto_wb
             print(f"Auto Weißabgleich: {'AN' if auto_wb else 'AUS'}")
-        elif key == ord('y'):
-            print("Opening media foundation panel control...")
-            cap.set(cv2.CAP_PROP_SETTINGS, 1)
+
     #------------------------------- Bild abspeichern ------------------------------------#
         elif key == 32:  # Leertaste
             timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -122,16 +119,30 @@ def main():
             print(f"📸 Bild gespeichert als: {dateiname}")
 
     #--------------------------- Bild-Analyse -------------------------------------#
+            anzahl_cluster = 6
             helligkeit = berechne_durchschnittshelligkeit(frame)
             farbanteile = berechne_farbanteile(frame, 50)
-            segmentierungsgrad = berechne_segmentierungsgrad(frame)
+            segmentierungsgrad = berechne_segmentierungsgrad(frame, anzahl_cluster)
             frequenz_index = berechne_frequenz_index(frame)
+            farbharmonie = berechne_farbharmonie(frame, anzahl_cluster)
+            bildrauschen = berechne_bildrausch_index(frame)
+            top3_Kategorien = klassifiziere_bild_clip(frame)
 
             print(f"Durchschnittliche Helligkeit: {helligkeit:.2f}")
             print("🎨 Farbanteile:")
             for farbe, anteil in farbanteile.items():
                 print(f"  {farbe}: {anteil:.3f}")
-            print(f"Frequenz-Index: {frequenz_index:.2f}")
+            print(f"Frequenz-Index: {frequenz_index:.2f} | Niedrige Frequenzen → große, flächige Strukturen (ruhige Bilder, wenig Details) | Hohe Frequenzen → viele Kanten, feine Details, Muster (z. B. Kritzeleien, Texturen, Rauschen)")
+            print("🧭 Interpretation der Werte: < 0.1	Sehr flächig, fast keine feinen Details | 0.1 – 0.5	Eher ruhig, moderate Details | 0.5 – 1.0	Ausgewogen zwischen Fläche und Detail | > 1.0	Viele feine Details, starke Kanten, „wilde“ Bildstruktur | > 2.0 – 5.0	Sehr detailreich oder rauschig")
+            print(f"Segmentierungs-Grad: {segmentierungsgrad:.2f} | Einfarbig/flächig (gering segmentiert) | bunt/kleinteilig (hoch segmentiert)")
+            print("🧭 Interpretation der Werte: ~ 0.0 – 0.2	Sehr gleichmäßige Clustergrößen → Bild hat gleichmäßig verteilte Farben | ~ 0.2 – 0.5	Mäßige Unterschiede in der Flächenverteilung | ~ 0.5 – 1.0+	Einige Cluster dominieren → starke farbliche Fragmentierung oder viele kleine Details")
+            print(f"Farbharmonie: {farbharmonie:.2f} | Große Abstände = starke Kontraste → „unharmonisch“ | Kleine Abstände = ähnliche Farben → „harmonisch“")
+            print("🧠 Interpretation des Werts: 1.0 → Sehr harmonisch (ähnliche Farben) | 0.0 → Sehr kontrastreich (komplementäre Farben)")
+            print(f"Bildrauschen: {bildrauschen:.2f} | Viele Kanten und hohe Bildfrequenzen = „visuelle Unruhe“")
+            print("📊 Typische Werte: 0.0 – 0.2: Sehr glatt, kaum Details | 0.3 – 0.6: Mittlere Textur, normale Bilder | 0.7 – 1.0: Sehr detailreich oder visuell überladen")
+            print("→ KI-Analyse (Top 3 Kategorien):")
+            for beschreibung, score in top3_Kategorien:
+                print(f"  - {beschreibung}: {score:.2%}")
             # sende_osc_daten(helligkeit, farbanteile)
 
         # Nach Tastenänderung Settings erneut anwenden

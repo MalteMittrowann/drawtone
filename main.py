@@ -26,7 +26,6 @@ exposure = -6.0
 brightness = 0.0
 contrast = 32.0
 temp = 3000
-wb_temp = 3000
 auto_wb = False
 
 def apply_settings(cap):
@@ -40,14 +39,13 @@ def apply_settings(cap):
     #---- Weißabgleich ----#
     cap.set(cv2.CAP_PROP_AUTO_WB, int(auto_wb))
     cap.set(cv2.CAP_PROP_TEMPERATURE, temp)
-    cap.set(cv2.CAP_PROP_WB_TEMPERATURE, wb_temp)
 
 #-------------------------------- Main-Function -------------------------------------#
 def main():
     global exposure, brightness, contrast, wb_temp, temp, auto_wb
 
     cap = cv2.VideoCapture(0, cv2.CAP_MSMF)
-    #cap.set(cv2.CAP_PROP_SETTINGS, 1)
+    cap.set(cv2.CAP_PROP_SETTINGS, 0)
 
     #---- Format ----#
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
@@ -61,7 +59,7 @@ def main():
     apply_settings(cap)
 
     print("Druecke LEERTASTE für Bildaufnahme, ESC zum Beenden.")
-    print("W/S: Exposure | E/D: Brightness | R/F: Contrast | T/G: Farbtemperatur | Z/H: Temperatur | A: Auto-WB")
+    print("W/S: Exposure | E/D: Brightness | R/F: Contrast | T/G: Farbtemperatur | A: Auto-WB | Y: Camera control panel")
 
     #-------------------------- Aufnahme starten mit Vorschau ----------------------------#
     while True:
@@ -97,22 +95,16 @@ def main():
             contrast -= 1.0
             print(f"Contrast: {contrast:.2f}")
         elif key == ord('t'):
-            wb_temp = min(wb_temp + 200, 20000)
+            wb_temp = min(temp + 200, 20000)
             print(f"WB-Temp: {wb_temp:.2f}")
         elif key == ord('g'):
-            wb_temp = max(wb_temp - 200, 0)
+            wb_temp = max(temp - 200, 0)
             print(f"WB-Temp: {wb_temp:.2f}")
-        elif key == ord('z'):
-            temp = min(temp + 200, 20000)
-            print(f"Temp: {temp:.2f}")
-        elif key == ord('h'):
-            temp = max(temp - 200, 0)
-            print(f"Temp: {temp:.2f}")
         elif key == ord('a'):
             auto_wb = not auto_wb
             print(f"Auto Weißabgleich: {'AN' if auto_wb else 'AUS'}")
         elif key == ord('y'):
-            print("Opening director show panel control...")
+            print("Opening media foundation panel control...")
             cap.set(cv2.CAP_PROP_SETTINGS, 1)
     #------------------------------- Bild abspeichern ------------------------------------#
         elif key == 32:  # Leertaste

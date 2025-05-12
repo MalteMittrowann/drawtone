@@ -1,12 +1,12 @@
 import cv2
 import numpy as np
 
-# ---------------------- Helligkeit ----------------------
+# ---------------------- Helligkeit ---------------------- #
 def berechne_durchschnittshelligkeit(image):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     return np.mean(gray)
 
-# ---------------------- Farbanteile ----------------------
+# ---------------------- Farbanteile ---------------------- #
 def berechne_farbanteile(image, threshold=100):
     """
     Bestimmt den Anteil von Grundfarben (RGB + CMY), Weiß und Schwarz im Bild.
@@ -65,7 +65,7 @@ def berechne_farbanteile(image, threshold=100):
     farbanteile = {farbe: count / total_pixels for farbe, count in farben.items()}
     return farbanteile
 
-# ---------------------- Segmentierungsgrad ----------------------
+# ---------------------- Segmentierungsgrad ---------------------- #
 def berechne_segmentierungsgrad(image, anzahl_cluster=5):
     # Bild in Float32 und in 2D umwandeln (für kmeans)
     pixel = image.reshape((-1, 3)).astype(np.float32)
@@ -74,7 +74,7 @@ def berechne_segmentierungsgrad(image, anzahl_cluster=5):
     kriterien = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, 1.0)
 
     # k-Means-Clustering
-    _, labels, _ = cv2.kmeans(pixel, anzahl_cluster, None, kriterien, 10, cv2.KMEANS_RANDOM_CENTERS)
+    _, labels, _ = cv2.kmeans(pixel, anzahl_cluster, kriterien, 10, cv2.KMEANS_RANDOM_CENTERS)
 
     # Anzahl Pixel pro Cluster zählen
     _, counts = np.unique(labels, return_counts=True)
@@ -85,7 +85,7 @@ def berechne_segmentierungsgrad(image, anzahl_cluster=5):
     return segmentierungsgrad
 
 
-# ---------------------- Bildfrequenzanalyse ----------------------
+# ---------------------- Bildfrequenzanalyse ---------------------- #
 def berechne_frequenz_index(image):
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     f = np.fft.fft2(gray)

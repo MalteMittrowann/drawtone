@@ -5,6 +5,8 @@ import os
 import time
 from image_analysis import berechne_durchschnittshelligkeit, berechne_farbanteile, berechne_segmentierungsgrad, berechne_frequenz_index, berechne_farbharmonie, berechne_bildrausch_index
 from image_classification import klassifiziere_bild_clip
+from image_detection import erkenne_text, erkenne_gesichter
+
 #----------------------------- OSC-Send-Modul -------------------------------------#
 osc_ip = "10.40.35.127"  # <-- hier die IP-Adresse des Empfänger-Computers eintragen
 osc_port = 8000
@@ -13,8 +15,8 @@ client = SimpleUDPClient(osc_ip, osc_port)
 def sende_osc_daten(helligkeit, farbanteile):
     client.send_message("/helligkeit", float(helligkeit))
     for farbe, anteil in farbanteile.items():
-        client.send_message(f"/farbe/{farbe}", float(anteil))
-    client.send_message("/morphtime", 20.0)
+        client.send_message(f"/{farbe}", float(anteil))
+    client.send_message("/morphtime", 2.0)
     client.send_message("/BPM", 120)
     client.send_message("/genre", 3)
     client.send_message("/morph", 1)
@@ -24,8 +26,8 @@ def sende_osc_daten(helligkeit, farbanteile):
 # Startwerte für Kamera-Parameter
 exposure = -6.0
 brightness = 0.0
-contrast = 32.0
-temp = 3000
+contrast = 50.0
+temp = 5000
 auto_wb = False
 
 def apply_settings(cap):
@@ -121,16 +123,23 @@ def main():
     #--------------------------- Bild-Analyse -------------------------------------#
             anzahl_cluster = 6
             helligkeit = berechne_durchschnittshelligkeit(frame)
-            farbanteile = berechne_farbanteile(frame, 50)
+            farbanteileRecieve = berechne_farbanteile(frame, 50)
             segmentierungsgrad = berechne_segmentierungsgrad(frame, anzahl_cluster)
             frequenz_index = berechne_frequenz_index(frame)
             farbharmonie = berechne_farbharmonie(frame, anzahl_cluster)
             bildrauschen = berechne_bildrausch_index(frame)
+
+    #-------------------------- Bild-Kategorisierung -------------------------------#
             top3_Kategorien = klassifiziere_bild_clip(frame)
 
+    #-------------------------- Bild-Erkennung -------------------------------------#
+            #text = erkenne_text(frame)
+            #anzahl_gesichter, gesichter = erkenne_gesichter(frame)
+
+    #-------------------------- Konsolen-Ausgabe -----------------------------------#
             print(f"Durchschnittliche Helligkeit: {helligkeit:.2f}")
             print("🎨 Farbanteile:")
-            for farbe, anteil in farbanteile.items():
+            for farbe, anteil in farbanteileRecieve.items():
                 print(f"  {farbe}: {anteil:.3f}")
             print(f"Frequenz-Index: {frequenz_index:.2f} | Niedrige Frequenzen → große, flächige Strukturen (ruhige Bilder, wenig Details) | Hohe Frequenzen → viele Kanten, feine Details, Muster (z. B. Kritzeleien, Texturen, Rauschen)")
             print("🧭 Interpretation der Werte: < 0.1	Sehr flächig, fast keine feinen Details | 0.1 – 0.5	Eher ruhig, moderate Details | 0.5 – 1.0	Ausgewogen zwischen Fläche und Detail | > 1.0	Viele feine Details, starke Kanten, „wilde“ Bildstruktur | > 2.0 – 5.0	Sehr detailreich oder rauschig")
@@ -143,7 +152,29 @@ def main():
             print("→ KI-Analyse (Top 3 Kategorien):")
             for beschreibung, score in top3_Kategorien:
                 print(f"  - {beschreibung}: {score:.2%}")
-            # sende_osc_daten(helligkeit, farbanteile)
+            #print("Erkannter Text:", text)
+            #print(f"Anzahl erkannter Gesichter: {anzahl_gesichter}")
+    
+    #-------------------------- Werte vorbereiten ------------------------------------#
+            farbanteileSend = {
+                "rot": farbanteileRecieve.get("rot", 0) + farbanteileRecieve.get("magenta", 0),     # Chords
+                "grün": farbanteileRecieve.get("grün", 0),                                          # Drums
+                "blau": farbanteileRecieve.get("blau", 0) + farbanteileRecieve.get("cyan", 0),      # Bass
+                "gelb": farbanteileRecieve.get("gelb", 0),                                          # Melodie
+                "weiß": farbanteileRecieve.get("weiß", 0),                                          # Sonstiges
+                "schwarz": farbanteileRecieve.get("schwarz", 0)                                     # Sonstiges
+            }
+
+            # Lineares Clamping: < 0.05 → 0, ≥ 0.3 → 1
+            for farbe in farbanteileSend:
+                wert = farbanteileSend[farbe]
+                if wert < 0.05:
+                    farbanteileSend[farbe] = 0
+                elif wert >= 0.3:
+                    farbanteileSend[farbe] = 1
+                    # Zwischen 0.05 und 0.3 bleibt der Wert wie er ist
+            
+            sende_osc_daten(helligkeit, farbanteileSend)
 
         # Nach Tastenänderung Settings erneut anwenden
         apply_settings(cap)

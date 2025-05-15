@@ -3,6 +3,7 @@ import cv2
 from datetime import datetime
 import os
 import numpy as np
+import time
 from image_analysis import berechne_durchschnittshelligkeit, berechne_farbanteile, berechne_segmentierungsgrad, berechne_frequenz_index, berechne_farbharmonie, berechne_bildrausch_index
 from image_classification import klassifiziere_bild_clip
 from image_detection import erkenne_text, erkenne_gesichter
@@ -19,6 +20,9 @@ def sende_osc_daten(helligkeit, farbanteile):
     client.send_message("/morphtime", 2.0)
     client.send_message("/BPM", 120)
     client.send_message("/genre", 3)
+
+    time.sleep(0.2)
+    
     client.send_message("/morph", 1)
 
 #-------------------------- Kamera-Kalibrierung ----------------------------------#

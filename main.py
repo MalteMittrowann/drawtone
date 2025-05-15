@@ -2,13 +2,13 @@ from pythonosc.udp_client import SimpleUDPClient
 import cv2
 from datetime import datetime
 import os
-import time
+import numpy as np
 from image_analysis import berechne_durchschnittshelligkeit, berechne_farbanteile, berechne_segmentierungsgrad, berechne_frequenz_index, berechne_farbharmonie, berechne_bildrausch_index
 from image_classification import klassifiziere_bild_clip
 from image_detection import erkenne_text, erkenne_gesichter
 
 #----------------------------- OSC-Send-Modul -------------------------------------#
-osc_ip = "10.40.35.127"  # <-- hier die IP-Adresse des Empfänger-Computers eintragen
+osc_ip = "172.20.10.14"  # <-- hier die IP-Adresse des Empfänger-Computers eintragen
 osc_port = 8000
 client = SimpleUDPClient(osc_ip, osc_port)
 
@@ -28,6 +28,7 @@ exposure = -6.0
 brightness = 0.0
 contrast = 50.0
 temp = 5000
+tint_shift = 0.0
 auto_wb = False
 
 def apply_settings(cap):
@@ -60,7 +61,7 @@ def main():
     apply_settings(cap)
 
     print("Druecke LEERTASTE für Bildaufnahme, ESC zum Beenden.")
-    print("W/S: Exposure | E/D: Brightness | R/F: Contrast | T/G: Farbtemperatur | A: Auto-WB")
+    print("W/S: Exposure | E/D: Brightness | R/F: Contrast | T/G: Farbtemperatur | Z/H: Tint-Anpassen | A: Auto-WB")
 
     #-------------------------- Aufnahme starten mit Vorschau ----------------------------#
     while True:
@@ -69,10 +70,29 @@ def main():
             print("Kein Bild erhalten.")
             break
 
-        cv2.imshow("Live-Vorschau, ESC druecken zum Beenden", frame)
+        # Tint anwenden
+        frame_tinted = apply_tint(frame, tint_shift)
+
+        cv2.imshow("Live-Vorschau, ESC druecken zum Beenden", frame_tinted)
         key = cv2.waitKey(1) & 0xFF
 
     #------------------------- Kamera nachträglich kalibieren ----------------------------#
+        def apply_tint(image, tint_shift):
+            """
+            tint_shift < 0 → grünlicher Tint
+            tint_shift > 0 → magentafarbener Tint
+            """
+            image = image.astype(np.float32)
+            image[:, :, 1] *= 1 - abs(tint_shift)  # Grünkanal reduzieren
+            if tint_shift > 0:
+                image[:, :, 0] *= 1 + tint_shift  # Blau verstärken
+                image[:, :, 2] *= 1 + tint_shift  # Rot verstärken
+            elif tint_shift < 0:
+                image[:, :, 1] *= 1 + abs(tint_shift)  # Grün verstärken
+                image[:, :, 0] *= 1 - abs(tint_shift)  # Blau senken
+                image[:, :, 2] *= 1 - abs(tint_shift)  # Rot senken
+            return np.clip(image, 0, 255).astype(np.uint8)
+        
         # Tastensteuerung
         if key == 27:  # ESC
             print("Beenden!")
@@ -101,6 +121,12 @@ def main():
         elif key == ord('g'):
             temp = max(temp - 200, 0)
             print(f"WB-Temp: {temp:.2f}")
+        elif key == ord('z'):  # Mehr Magenta
+            tint_shift = min(tint_shift + 0.05, 0.5)
+            print(f"Tint: {tint_shift}")
+        elif key == ord('h'):  # Mehr Grün
+            tint_shift = max(tint_shift - 0.05, -0.5)
+            print(f"Tint: {tint_shift}")
         elif key == ord('a'):
             auto_wb = not auto_wb
             print(f"Auto Weißabgleich: {'AN' if auto_wb else 'AUS'}")
@@ -117,24 +143,24 @@ def main():
             os.makedirs(ordner, exist_ok=True)
 
             dateiname = os.path.join(ordner, f"aufnahme_{timestamp}.jpg")
-            cv2.imwrite(dateiname, frame)
+            cv2.imwrite(dateiname, frame_tinted)
             print(f"📸 Bild gespeichert als: {dateiname}")
 
     #--------------------------- Bild-Analyse -------------------------------------#
             anzahl_cluster = 6
-            helligkeit = berechne_durchschnittshelligkeit(frame)
-            farbanteileRecieve = berechne_farbanteile(frame, 50)
-            segmentierungsgrad = berechne_segmentierungsgrad(frame, anzahl_cluster)
-            frequenz_index = berechne_frequenz_index(frame)
-            farbharmonie = berechne_farbharmonie(frame, anzahl_cluster)
-            bildrauschen = berechne_bildrausch_index(frame)
+            helligkeit = berechne_durchschnittshelligkeit(frame_tinted)
+            farbanteileRecieve = berechne_farbanteile(frame_tinted, 50)
+            segmentierungsgrad = berechne_segmentierungsgrad(frame_tinted, anzahl_cluster)
+            frequenz_index = berechne_frequenz_index(frame_tinted)
+            farbharmonie = berechne_farbharmonie(frame_tinted, anzahl_cluster)
+            bildrauschen = berechne_bildrausch_index(frame_tinted)
 
     #-------------------------- Bild-Kategorisierung -------------------------------#
-            top3_Kategorien = klassifiziere_bild_clip(frame)
+            top3_Kategorien = klassifiziere_bild_clip(frame_tinted)
 
     #-------------------------- Bild-Erkennung -------------------------------------#
-            #text = erkenne_text(frame)
-            #anzahl_gesichter, gesichter = erkenne_gesichter(frame)
+            #text = erkenne_text(frame_tinted)
+            #anzahl_gesichter, gesichter = erkenne_gesichter(frame_tinted)
 
     #-------------------------- Konsolen-Ausgabe -----------------------------------#
             print(f"Durchschnittliche Helligkeit: {helligkeit:.2f}")

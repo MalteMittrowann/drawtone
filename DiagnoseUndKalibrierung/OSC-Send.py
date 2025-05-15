@@ -1,7 +1,7 @@
 from pythonosc.udp_client import SimpleUDPClient
 
 # Ziel-IP und Port – anpassen!
-ip = "10.40.35.127"     # IP-Adresse des Rechners, auf dem PureData läuft
+ip = "172.20.10.14"     # IP-Adresse des Rechners, auf dem PureData läuft
 port = 8000             # Port, auf dem PureData in [udpreceive 8000] hört
 
 # OSC-Client einrichten

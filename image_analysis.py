@@ -39,7 +39,7 @@ def berechne_farbanteile(image, thresholdWhite=75, thresholdBlack=25):
                 farben["weiß"] += 1
             else:
                 # Farberkennung: max-Kanal bestimmt Grundfarbe
-                if abs(r - g) < 20 and b < r * 0.5:
+                if abs(r - g) < 65 and b < min(r, g):
                     farben["gelb"] += 1
                 elif g > r and g > b:
                     farben["grün"] += 1
@@ -153,4 +153,4 @@ def berechne_bildrausch_index(image):
     # Du kannst den Bereich anpassen basierend auf Tests
     index = np.tanh(varianz / 500)  # Sanfte Normierung auf ca. 0–1
 
-    return index
+    return index, varianz

@@ -64,7 +64,7 @@ def finde_optimalen_weissabgleich(cap, thresholdWhite=75, thresholdBlack=25, sch
     original_tint = tint_shift   # Annahme: Ausgangstint ist 0.0
 
     # Temperatur-Bereich (typisch: 2800–6500 K)
-    for temp_candidate in range(3000, 4001, schritte_temp):
+    for temp_candidate in range(2800, 3501, schritte_temp):
         temp = temp_candidate
         apply_settings(cap)
 
@@ -73,13 +73,16 @@ def finde_optimalen_weissabgleich(cap, thresholdWhite=75, thresholdBlack=25, sch
             ret, _ = cap.read()
 
         # Tint-Werte im Bereich ±0.5 (entspricht starker Verschiebung)
-        for tint_candidate in np.arange(-0.5, 0.51, schritte_tint):
+        for tint_candidate in np.arange(-0.75, 0.251, schritte_tint):
             ret, frame = cap.read()
             if not ret:
                 continue
+            
+            # Kopie für Analyse in kleiner Auflösung
+            analysis_frame = cv2.resize(frame, (320, 240))
 
             # Tint anwenden
-            frame_tinted = apply_tint(frame, tint_candidate)
+            frame_tinted = apply_tint(analysis_frame, tint_candidate)
 
             # Farbanteile berechnen
             anteile = berechne_farbanteile(frame_tinted, thresholdWhite, thresholdBlack)
@@ -111,8 +114,8 @@ def main():
     cap = cv2.VideoCapture(0, cv2.CAP_MSMF)
 
     #---- Format ----#
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
 
     if not cap.isOpened():
         print("Fehler: Kamera konnte nicht geöffnet werden.")
@@ -128,9 +131,6 @@ def main():
     # Kamera-Kalibrierung starten
     apply_settings(cap)
 
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
-
     print("Druecke LEERTASTE für Bildaufnahme, ESC zum Beenden.")
     print("W/S: Exposure | E/D: Brightness | R/F: Contrast | T/G: Farbtemperatur | Z/H: Tint-Anpassen | A: Auto-WB")
 
@@ -141,8 +141,12 @@ def main():
             print("Kein Bild erhalten.")
             break
         
+        # Kopie für Analyse in kleiner Auflösung
+        analysis_frame = cv2.resize(frame, (320, 240))
+
         #----------------- WB-Tint-Shift ------------------#
         # Tint anwenden
+        frame_tinted_analyse = apply_tint(analysis_frame, tint_shift)
         frame_tinted = apply_tint(frame, tint_shift)
 
         #-------------- Video-Voschau starten --------------#
@@ -210,7 +214,7 @@ def main():
             client.send_message("/morphtime", 2.0)
 
             #---------------- Helligkeit ----------------#
-            helligkeit = berechne_durchschnittshelligkeit(frame_tinted)
+            helligkeit = berechne_durchschnittshelligkeit(frame_tinted_analyse)
             print(f"Durchschnittliche Helligkeit: {helligkeit:.2f}")
 
             helligkeit_gemappt = map_value(helligkeit, 0, 255, 20, 600)
@@ -218,7 +222,7 @@ def main():
             client.send_message("/grundton", float(helligkeit_gemappt))
 
             #---------------- Farbanalyse ---------------#
-            farbanteile = berechne_farbanteile(frame_tinted, 75, 25)
+            farbanteile = berechne_farbanteile(frame_tinted_analyse, 75, 25)
             print("🎨 Farbanteile:")
             for farbe, anteil in farbanteile.items():
                 print(f"  {farbe}: {anteil:.3f}")
@@ -235,7 +239,7 @@ def main():
                 client.send_message(f"/{farbe}", float(farbanteile_mapped))
 
             #------------ Segmentierungsgrad ------------#
-            segmentierungsgrad = berechne_segmentierungsgrad(frame_tinted, anzahl_cluster)
+            segmentierungsgrad = berechne_segmentierungsgrad(frame_tinted_analyse, anzahl_cluster)
             print(f"Segmentierungs-Grad: {segmentierungsgrad:.2f} | Einfarbig/flächig (gering segmentiert) | bunt/kleinteilig (hoch segmentiert)")
             print("🧭 Interpretation der Werte: ~ 0.0 – 0.2	Sehr gleichmäßige Clustergrößen → Bild hat gleichmäßig verteilte Farben | ~ 0.2 – 0.5	Mäßige Unterschiede in der Flächenverteilung | ~ 0.5 – 1.0+	Einige Cluster dominieren → starke farbliche Fragmentierung oder viele kleine Details")
             
@@ -243,7 +247,7 @@ def main():
             client.send_message("/segmentierungsgrad", segmentierungsgradClamped)
 
             #------------- Frequenz-Index --------------#
-            frequenz_index = berechne_frequenz_index(frame_tinted)
+            frequenz_index = berechne_frequenz_index(frame_tinted_analyse)
             print(f"Frequenz-Index: {frequenz_index:.2f} | Niedrige Frequenzen → große, flächige Strukturen (ruhige Bilder, wenig Details) | Hohe Frequenzen → viele Kanten, feine Details, Muster (z. B. Kritzeleien, Texturen, Rauschen)")
             print("🧭 Interpretation der Werte: < 0.1	Sehr flächig, fast keine feinen Details | 0.1 – 0.5	Eher ruhig, moderate Details | 0.5 – 1.0	Ausgewogen zwischen Fläche und Detail | > 1.0	Viele feine Details, starke Kanten, „wilde“ Bildstruktur | > 2.0 – 5.0	Sehr detailreich oder rauschig")
             
@@ -252,17 +256,17 @@ def main():
             client.send_message("/drumsample", frequenz_index_mapped_clamped)
 
             #-------------- Farbharmonie ---------------#
-            farbharmonie = berechne_farbharmonie(frame_tinted, anzahl_cluster)
+            farbharmonie = berechne_farbharmonie(frame_tinted_analyse, anzahl_cluster)
             print(f"Farbharmonie: {farbharmonie:.2f} | Große Abstände = starke Kontraste → „unharmonisch“ | Kleine Abstände = ähnliche Farben → „harmonisch“")
             print("🧠 Interpretation des Werts: 1.0 → Sehr harmonisch (ähnliche Farben) | 0.0 → Sehr kontrastreich (komplementäre Farben)")
 
             #-------------- Bildrauschen ---------------#
-            bildrauschen = berechne_bildrausch_index(frame_tinted)
-            print(f"Bildrauschen: {bildrauschen:.2f} | Viele Kanten und hohe Bildfrequenzen = „visuelle Unruhe“")
+            bildrauschen_index, bildrauschen_varianz = berechne_bildrausch_index(frame_tinted_analyse)
+            print(f"Bildrauschen-Index: {bildrauschen_index:.2f} | Bildrauschen_Varianz: {bildrauschen_varianz: .2f} | Viele Kanten und hohe Bildfrequenzen = „visuelle Unruhe“")
             print("📊 Typische Werte: 0.0 – 0.2: Sehr glatt, kaum Details | 0.3 – 0.6: Mittlere Textur, normale Bilder | 0.7 – 1.0: Sehr detailreich oder visuell überladen")
 
             #---------- Bild-Kategorisierung -----------#
-            top3_Kategorien = klassifiziere_bild_clip(frame_tinted)
+            top3_Kategorien = klassifiziere_bild_clip(frame_tinted_analyse)
             print("→ KI-Analyse (Top 3 Kategorien):")
             for beschreibung, score in top3_Kategorien:
                 print(f"  - {beschreibung}: {score:.2%}")
@@ -355,9 +359,9 @@ def main():
             print("Abfahrt!")
 
     #-------------------------- Bild-Erkennung -------------------------------------#
-            #text = erkenne_text(frame_tinted)
+            #text = erkenne_text(frame_tinted_analyse)
             #print("Erkannter Text:", text)
-            #anzahl_gesichter, gesichter = erkenne_gesichter(frame_tinted)
+            #anzahl_gesichter, gesichter = erkenne_gesichter(frame_tinted_analyse)
             #print(f"Anzahl erkannter Gesichter: {anzahl_gesichter}")
 
         # Nach Tastenänderung Settings erneut anwenden

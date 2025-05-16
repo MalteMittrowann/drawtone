@@ -9,29 +9,17 @@ from image_classification import klassifiziere_bild_clip
 from image_detection import erkenne_text, erkenne_gesichter
 
 #----------------------------- OSC-Send-Modul -------------------------------------#
-osc_ip = "172.20.10.14"  # <-- hier die IP-Adresse des Empfänger-Computers eintragen
+osc_ip = "10.40.35.126"  # <-- hier die IP-Adresse des Empfänger-Computers eintragen
 osc_port = 8000
 client = SimpleUDPClient(osc_ip, osc_port)
-
-def sende_osc_daten(helligkeit, farbanteile):
-    client.send_message("/helligkeit", float(helligkeit))
-    for farbe, anteil in farbanteile.items():
-        client.send_message(f"/{farbe}", float(anteil))
-    client.send_message("/morphtime", 2.0)
-    client.send_message("/BPM", 120)
-    client.send_message("/genre", 3)
-
-    time.sleep(0.2)
-    
-    client.send_message("/morph", 1)
 
 #-------------------------- Kamera-Kalibrierung ----------------------------------#
 
 # Startwerte für Kamera-Parameter
-exposure = -6.0
+exposure = -7.5
 brightness = 0.0
 contrast = 50.0
-temp = 5000
+temp = 3000
 tint_shift = 0.0
 auto_wb = False
 
@@ -47,22 +35,101 @@ def apply_settings(cap):
     cap.set(cv2.CAP_PROP_AUTO_WB, int(auto_wb))
     cap.set(cv2.CAP_PROP_TEMPERATURE, temp)
 
+def apply_tint(image, tint_shift):
+    """
+    tint_shift < 0 → grünlicher Tint
+    tint_shift > 0 → magentafarbener Tint
+    """
+    image = image.astype(np.float32)
+    image[:, :, 1] *= 1 - abs(tint_shift)  # Grünkanal reduzieren
+    if tint_shift > 0:
+        image[:, :, 0] *= 1 + tint_shift  # Blau verstärken
+        image[:, :, 2] *= 1 + tint_shift  # Rot verstärken
+    elif tint_shift < 0:
+        image[:, :, 1] *= 1 + abs(tint_shift)  # Grün verstärken
+        image[:, :, 0] *= 1 - abs(tint_shift)  # Blau senken
+        image[:, :, 2] *= 1 - abs(tint_shift)  # Rot senken
+    return np.clip(image, 0, 255).astype(np.uint8)
+
+def finde_optimalen_weissabgleich(cap, thresholdWhite=75, thresholdBlack=25, schritte_temp=100, schritte_tint=0.025):
+    """
+    Findet die Kombination aus Temperatur und Tint, bei der der Weißanteil am höchsten ist.
+    """
+    best_score = -1
+    best_temp = None
+    best_tint = None
+
+    global temp, tint_shift  # Nutzt die globale Variable für Temperatur
+    original_temp = temp  # Sicherung
+    original_tint = tint_shift   # Annahme: Ausgangstint ist 0.0
+
+    # Temperatur-Bereich (typisch: 2800–6500 K)
+    for temp_candidate in range(3000, 4001, schritte_temp):
+        temp = temp_candidate
+        apply_settings(cap)
+
+        # Einige Frames überspringen, damit sich Parameter setzen können
+        for _ in range(5):
+            ret, _ = cap.read()
+
+        # Tint-Werte im Bereich ±0.5 (entspricht starker Verschiebung)
+        for tint_candidate in np.arange(-0.5, 0.51, schritte_tint):
+            ret, frame = cap.read()
+            if not ret:
+                continue
+
+            # Tint anwenden
+            frame_tinted = apply_tint(frame, tint_candidate)
+
+            # Farbanteile berechnen
+            anteile = berechne_farbanteile(frame_tinted, thresholdWhite, thresholdBlack)
+            weiss = anteile.get("weiß", 0)
+
+            print(f"T: {temp_candidate}, Tint: {tint_candidate:.2f} → Weißanteil: {weiss:.3f}")
+
+            if weiss > best_score:
+                best_score = weiss
+                best_temp = temp_candidate
+                best_tint = tint_candidate
+
+    # Ergebnis
+    print(f"\n✅ Beste Einstellung: Temp = {best_temp}, Tint = {best_tint:.2f}, Weißanteil = {best_score:.3f}")
+
+    # Ursprungswerte wiederherstellen (optional)
+    temp = original_temp
+    apply_settings(cap)
+
+    return best_temp, best_tint
+
+def map_value(x, in_min, in_max, out_min, out_max):
+    return (x - in_min) / (in_max - in_min) * (out_max - out_min) + out_min
+
 #-------------------------------- Main-Function -------------------------------------#
 def main():
-    global exposure, brightness, contrast, temp, auto_wb
+    global exposure, brightness, contrast, temp, auto_wb, tint_shift
 
     cap = cv2.VideoCapture(0, cv2.CAP_MSMF)
 
     #---- Format ----#
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
 
     if not cap.isOpened():
         print("Fehler: Kamera konnte nicht geöffnet werden.")
         return
 
+    # ----- EINMALIGE Kalibrierung zu Beginn -----
+    beste_temp, beste_tint = finde_optimalen_weissabgleich(cap)
+
+    # Beste Werte setzen
+    temp = beste_temp
+    tint_shift = beste_tint
+
     # Kamera-Kalibrierung starten
     apply_settings(cap)
+
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
 
     print("Druecke LEERTASTE für Bildaufnahme, ESC zum Beenden.")
     print("W/S: Exposure | E/D: Brightness | R/F: Contrast | T/G: Farbtemperatur | Z/H: Tint-Anpassen | A: Auto-WB")
@@ -73,29 +140,16 @@ def main():
         if not ret:
             print("Kein Bild erhalten.")
             break
-
+        
+        #----------------- WB-Tint-Shift ------------------#
         # Tint anwenden
         frame_tinted = apply_tint(frame, tint_shift)
 
+        #-------------- Video-Voschau starten --------------#
         cv2.imshow("Live-Vorschau, ESC druecken zum Beenden", frame_tinted)
         key = cv2.waitKey(1) & 0xFF
 
     #------------------------- Kamera nachträglich kalibieren ----------------------------#
-        def apply_tint(image, tint_shift):
-            """
-            tint_shift < 0 → grünlicher Tint
-            tint_shift > 0 → magentafarbener Tint
-            """
-            image = image.astype(np.float32)
-            image[:, :, 1] *= 1 - abs(tint_shift)  # Grünkanal reduzieren
-            if tint_shift > 0:
-                image[:, :, 0] *= 1 + tint_shift  # Blau verstärken
-                image[:, :, 2] *= 1 + tint_shift  # Rot verstärken
-            elif tint_shift < 0:
-                image[:, :, 1] *= 1 + abs(tint_shift)  # Grün verstärken
-                image[:, :, 0] *= 1 - abs(tint_shift)  # Blau senken
-                image[:, :, 2] *= 1 - abs(tint_shift)  # Rot senken
-            return np.clip(image, 0, 255).astype(np.uint8)
         
         # Tastensteuerung
         if key == 27:  # ESC
@@ -120,16 +174,16 @@ def main():
             contrast -= 1.0
             print(f"Contrast: {contrast:.2f}")
         elif key == ord('t'):
-            temp = min(temp + 200, 20000)
+            temp = min(temp + 200, 20000) # type: ignore
             print(f"WB-Temp: {temp:.2f}")
         elif key == ord('g'):
-            temp = max(temp - 200, 0)
+            temp = max(temp - 200, 0) # type: ignore
             print(f"WB-Temp: {temp:.2f}")
         elif key == ord('z'):  # Mehr Magenta
-            tint_shift = min(tint_shift + 0.05, 0.5)
+            tint_shift = min(tint_shift + 0.05, 0.5) # type: ignore
             print(f"Tint: {tint_shift}")
         elif key == ord('h'):  # Mehr Grün
-            tint_shift = max(tint_shift - 0.05, -0.5)
+            tint_shift = max(tint_shift - 0.05, -0.5) # type: ignore
             print(f"Tint: {tint_shift}")
         elif key == ord('a'):
             auto_wb = not auto_wb
@@ -152,59 +206,159 @@ def main():
 
     #--------------------------- Bild-Analyse -------------------------------------#
             anzahl_cluster = 6
+
+            client.send_message("/morphtime", 2.0)
+
+            #---------------- Helligkeit ----------------#
             helligkeit = berechne_durchschnittshelligkeit(frame_tinted)
-            farbanteileRecieve = berechne_farbanteile(frame_tinted, 50)
-            segmentierungsgrad = berechne_segmentierungsgrad(frame_tinted, anzahl_cluster)
-            frequenz_index = berechne_frequenz_index(frame_tinted)
-            farbharmonie = berechne_farbharmonie(frame_tinted, anzahl_cluster)
-            bildrauschen = berechne_bildrausch_index(frame_tinted)
-
-    #-------------------------- Bild-Kategorisierung -------------------------------#
-            top3_Kategorien = klassifiziere_bild_clip(frame_tinted)
-
-    #-------------------------- Bild-Erkennung -------------------------------------#
-            #text = erkenne_text(frame_tinted)
-            #anzahl_gesichter, gesichter = erkenne_gesichter(frame_tinted)
-
-    #-------------------------- Konsolen-Ausgabe -----------------------------------#
             print(f"Durchschnittliche Helligkeit: {helligkeit:.2f}")
+
+            helligkeit_gemappt = map_value(helligkeit, 0, 255, 20, 600)
+
+            client.send_message("/grundton", float(helligkeit_gemappt))
+
+            #---------------- Farbanalyse ---------------#
+            farbanteile = berechne_farbanteile(frame_tinted, 75, 25)
             print("🎨 Farbanteile:")
-            for farbe, anteil in farbanteileRecieve.items():
+            for farbe, anteil in farbanteile.items():
                 print(f"  {farbe}: {anteil:.3f}")
-            print(f"Frequenz-Index: {frequenz_index:.2f} | Niedrige Frequenzen → große, flächige Strukturen (ruhige Bilder, wenig Details) | Hohe Frequenzen → viele Kanten, feine Details, Muster (z. B. Kritzeleien, Texturen, Rauschen)")
-            print("🧭 Interpretation der Werte: < 0.1	Sehr flächig, fast keine feinen Details | 0.1 – 0.5	Eher ruhig, moderate Details | 0.5 – 1.0	Ausgewogen zwischen Fläche und Detail | > 1.0	Viele feine Details, starke Kanten, „wilde“ Bildstruktur | > 2.0 – 5.0	Sehr detailreich oder rauschig")
+
+            #--- Farbanteile mappen und senden ---#
+            for farbe, anteil in farbanteile.items():
+                if anteil < 0.025:
+                    farbanteile_mapped = 0.0
+                elif anteil >= 1.0:
+                    farbanteile_mapped = 1.0
+                else:
+                    farbanteile_mapped = map_value(anteil, 0.025, 1.0, 0.7, 1.0)
+
+                client.send_message(f"/{farbe}", float(farbanteile_mapped))
+
+            #------------ Segmentierungsgrad ------------#
+            segmentierungsgrad = berechne_segmentierungsgrad(frame_tinted, anzahl_cluster)
             print(f"Segmentierungs-Grad: {segmentierungsgrad:.2f} | Einfarbig/flächig (gering segmentiert) | bunt/kleinteilig (hoch segmentiert)")
             print("🧭 Interpretation der Werte: ~ 0.0 – 0.2	Sehr gleichmäßige Clustergrößen → Bild hat gleichmäßig verteilte Farben | ~ 0.2 – 0.5	Mäßige Unterschiede in der Flächenverteilung | ~ 0.5 – 1.0+	Einige Cluster dominieren → starke farbliche Fragmentierung oder viele kleine Details")
+            
+            segmentierungsgradClamped = max(0.0, min(1.0, segmentierungsgrad))
+            client.send_message("/segmentierungsgrad", segmentierungsgradClamped)
+
+            #------------- Frequenz-Index --------------#
+            frequenz_index = berechne_frequenz_index(frame_tinted)
+            print(f"Frequenz-Index: {frequenz_index:.2f} | Niedrige Frequenzen → große, flächige Strukturen (ruhige Bilder, wenig Details) | Hohe Frequenzen → viele Kanten, feine Details, Muster (z. B. Kritzeleien, Texturen, Rauschen)")
+            print("🧭 Interpretation der Werte: < 0.1	Sehr flächig, fast keine feinen Details | 0.1 – 0.5	Eher ruhig, moderate Details | 0.5 – 1.0	Ausgewogen zwischen Fläche und Detail | > 1.0	Viele feine Details, starke Kanten, „wilde“ Bildstruktur | > 2.0 – 5.0	Sehr detailreich oder rauschig")
+            
+            frequenz_index_mapped = map_value(frequenz_index, 0, 10, 0, 127)
+            frequenz_index_mapped_clamped = max(0.0, min(127.0, frequenz_index_mapped))
+            client.send_message("/drumsample", frequenz_index_mapped_clamped)
+
+            #-------------- Farbharmonie ---------------#
+            farbharmonie = berechne_farbharmonie(frame_tinted, anzahl_cluster)
             print(f"Farbharmonie: {farbharmonie:.2f} | Große Abstände = starke Kontraste → „unharmonisch“ | Kleine Abstände = ähnliche Farben → „harmonisch“")
             print("🧠 Interpretation des Werts: 1.0 → Sehr harmonisch (ähnliche Farben) | 0.0 → Sehr kontrastreich (komplementäre Farben)")
+
+            #-------------- Bildrauschen ---------------#
+            bildrauschen = berechne_bildrausch_index(frame_tinted)
             print(f"Bildrauschen: {bildrauschen:.2f} | Viele Kanten und hohe Bildfrequenzen = „visuelle Unruhe“")
             print("📊 Typische Werte: 0.0 – 0.2: Sehr glatt, kaum Details | 0.3 – 0.6: Mittlere Textur, normale Bilder | 0.7 – 1.0: Sehr detailreich oder visuell überladen")
+
+            #---------- Bild-Kategorisierung -----------#
+            top3_Kategorien = klassifiziere_bild_clip(frame_tinted)
             print("→ KI-Analyse (Top 3 Kategorien):")
             for beschreibung, score in top3_Kategorien:
                 print(f"  - {beschreibung}: {score:.2%}")
-            #print("Erkannter Text:", text)
-            #print(f"Anzahl erkannter Gesichter: {anzahl_gesichter}")
-    
-    #-------------------------- Werte vorbereiten ------------------------------------#
-            farbanteileSend = {
-                "rot": farbanteileRecieve.get("rot", 0) + farbanteileRecieve.get("magenta", 0),     # Chords
-                "grün": farbanteileRecieve.get("grün", 0),                                          # Drums
-                "blau": farbanteileRecieve.get("blau", 0) + farbanteileRecieve.get("cyan", 0),      # Bass
-                "gelb": farbanteileRecieve.get("gelb", 0),                                          # Melodie
-                "weiß": farbanteileRecieve.get("weiß", 0),                                          # Sonstiges
-                "schwarz": farbanteileRecieve.get("schwarz", 0)                                     # Sonstiges
+            
+            genre_mapping = {
+                # 1 – Sehr harmonisch, ruhig, ästhetisch
+                "blank": 1,
+                "empty": 1,
+                "white canvas": 1,
+                "minimal": 1,
+
+                # 2 – Harmonisch mit Energie
+                "vivid": 2,
+                "expressive": 2,
+                "dynamic": 2,
+                "energetic": 2,
+                "structured": 2,
+                "colorful composition": 2,
+                "peaceful": 2,
+                "harmonious": 2,
+                "calm": 2,
+                "soothing": 2,
+                "balanced": 2,
+                "relaxing": 2,
+                "meditative": 2,
+                "elegant": 2,
+
+                # 3 – Neutral, technisch, durchschnittlich
+                "average": 3,
+                "neutral": 3,
+                "schematic": 3,
+                "technical": 3,
+                "basic": 3,
+                "unremarkable": 3,
+
+                # 4 – Leicht unruhig, erste Dissonanz
+                "clashing": 4,
+                "uneven": 4,
+                "tense": 4,
+                "chaotic sketch": 4,
+                "disharmony": 4,
+
+                # 5 – Deutlich unruhig, stressig
+                # 6 – Unästhetisch, visuell störend
+                # 7 – Extrem negativ, verstörend
+                "stressful": 7,
+                "chaotic": 7,
+                "overwhelming": 7,
+                "disorganized": 7,
+                "visual noise": 7,
+
+                "ugly": 7,
+                "harsh": 7,
+                "distorted": 7,
+                "unpleasant": 7,
+                "painful": 7,
+
+                "violent": 7,
+                "aggressive": 7,
+                "terrifying": 7,
+                "destructive": 7,
+                "angry": 7,
+                "disturbing": 7
             }
 
-            # Lineares Clamping: < 0.05 → 0, ≥ 0.3 → 1
-            for farbe in farbanteileSend:
-                wert = farbanteileSend[farbe]
-                if wert < 0.05:
-                    farbanteileSend[farbe] = 0
-                elif wert >= 0.3:
-                    farbanteileSend[farbe] = 1
-                    # Zwischen 0.05 und 0.3 bleibt der Wert wie er ist
-            
-            sende_osc_daten(helligkeit, farbanteileSend)
+            def bestimme_genre_wert(top3_kategorien, genre_mapping):
+                """Bestimme Genre-Wert basierend auf dem Beschreibungstext mit höchstem Score."""
+                if not top3_kategorien:
+                    return 3  # Neutraler Fallback
+
+                beste_beschreibung = top3_kategorien[0][0].lower()
+
+                for key, wert in genre_mapping.items():
+                    if key in beste_beschreibung:
+                        return wert
+
+                return 3  # Fallback auf neutral
+
+            # Genre bestimmen und per OSC senden
+            genre_wert = bestimme_genre_wert(top3_Kategorien, genre_mapping)
+            client.send_message("/genre", genre_wert)
+
+            print(f"Gesendeter Genrewert: {genre_wert:.2f} --> von 1-7")
+
+            client.send_message("/BPM", 180)
+
+            time.sleep(0.2)
+
+            client.send_message("/morph", 1)
+            print("Abfahrt!")
+
+    #-------------------------- Bild-Erkennung -------------------------------------#
+            #text = erkenne_text(frame_tinted)
+            #print("Erkannter Text:", text)
+            #anzahl_gesichter, gesichter = erkenne_gesichter(frame_tinted)
+            #print(f"Anzahl erkannter Gesichter: {anzahl_gesichter}")
 
         # Nach Tastenänderung Settings erneut anwenden
         apply_settings(cap)

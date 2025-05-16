@@ -7,9 +7,9 @@ def berechne_durchschnittshelligkeit(image):
     return np.mean(gray)
 
 # ---------------------- Farbanteile ---------------------- #
-def berechne_farbanteile(image, threshold=100):
+def berechne_farbanteile(image, thresholdWhite=75, thresholdBlack=25):
     """
-    Bestimmt den Anteil von Grundfarben (RGB + CMY), Weiß und Schwarz im Bild.
+    Bestimmt den Anteil von Rot, Grün, Blau, Gelb, Weiß und Schwarz im Bild.
     Threshold: Empfindlichkeit für Schwarz und Weiß (0–255).
     """
     h, w, _ = image.shape
@@ -23,8 +23,6 @@ def berechne_farbanteile(image, threshold=100):
         "rot": 0,
         "grün": 0,
         "blau": 0,
-        "cyan": 0,
-        "magenta": 0,
         "gelb": 0,
         "weiß": 0,
         "schwarz": 0
@@ -34,34 +32,26 @@ def berechne_farbanteile(image, threshold=100):
         for pixel in row:
             b, g, r = pixel
 
-            if max(r, g, b) < threshold:
+            # Weiß- und Schwarz-Erkennung
+            if max(r, g, b) < thresholdBlack:
                 farben["schwarz"] += 1
-            elif min(r, g, b) > 255 - threshold:
+            elif min(r, g, b) > 255 - thresholdWhite:
                 farben["weiß"] += 1
             else:
-                if r > g and r > b:
-                    if g > b:
-                        farben["gelb"] += 1
-                    elif b > g:
-                        farben["magenta"] += 1
-                    else:
-                        farben["rot"] += 1
+                # Farberkennung: max-Kanal bestimmt Grundfarbe
+                if abs(r - g) < 20 and b < r * 0.5:
+                    farben["gelb"] += 1
                 elif g > r and g > b:
-                    if r > b:
-                        farben["gelb"] += 1
-                    elif b > r:
-                        farben["cyan"] += 1
-                    else:
-                        farben["grün"] += 1
+                    farben["grün"] += 1
                 elif b > r and b > g:
-                    if r > g:
-                        farben["magenta"] += 1
-                    elif g > r:
-                        farben["cyan"] += 1
-                    else:
-                        farben["blau"] += 1
+                    farben["blau"] += 1
+                elif r > g and r > b:
+                    farben["rot"] += 1
+                else:
+                    # Wenn nichts klar zugeordnet: ignorieren
+                    pass
 
-    # Prozentuale Anteile
+    # Prozentuale Anteile berechnen
     farbanteile = {farbe: count / total_pixels for farbe, count in farben.items()}
     return farbanteile
 

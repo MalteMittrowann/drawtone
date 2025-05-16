@@ -10,15 +10,64 @@ model, preprocess = clip.load("ViT-B/32", device=device)
 
 # Liste von möglichen Bildbeschreibungen
 beschreibungen = [
-    "eine abstrakte Zeichnung",
-    "ein Porträt",
-    "eine Landschaft",
-    "ein Tierbild",
-    "eine Kindermalerei",
-    "ein technisches Diagramm",
-    "ein Gebäude",
-    "viel weißer Hintergrund",
-    "ein farbenfrohes Bild",
+    # 1 – Sehr harmonisch, ruhig, ästhetisch
+    "blank",
+    "empty",
+    "white canvas",
+    "minimal",
+
+    # 2 – Harmonisch mit Energie
+    "peaceful",
+    "harmonious",
+    "calm",
+    "soothing",
+    "balanced",
+    "relaxing",
+    "meditative",
+    "elegant",
+    "vivid",
+    "expressive",
+    "dynamic",
+    "energetic",
+    "structured",
+    "colorful composition",
+
+    # 3 – Neutral, technisch, durchschnittlich
+    "average",
+    "neutral",
+    "schematic",
+    "technical",
+    "basic",
+    "unremarkable",
+
+    # 4 – Leicht unruhig, erste Dissonanz
+    "clashing",
+    "uneven",
+    "tense",
+    "chaotic sketch",
+    "disharmony",
+
+    # 5 – Deutlich unruhig, stressig
+
+
+    # 6 – Unästhetisch, visuell störend
+    # 7 – Extrem negativ, verstörend
+    "stressful",
+    "chaotic",
+    "overwhelming",
+    "disorganized",
+    "visual noise",
+    "ugly",
+    "harsh",
+    "distorted",
+    "unpleasant",
+    "painful",
+    "violent",
+    "aggressive",
+    "terrifying",
+    "destructive",
+    "angry",
+    "disturbing"
 ]
 
 text_tokens = clip.tokenize(beschreibungen).to(device)

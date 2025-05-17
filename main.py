@@ -5,8 +5,9 @@ import os
 import numpy as np
 import time
 from image_analysis import berechne_durchschnittshelligkeit, berechne_farbanteile, berechne_segmentierungsgrad, berechne_frequenz_index, berechne_farbharmonie, berechne_bildrausch_index
-from image_classification import klassifiziere_bild_clip
+from image_classification import klassifiziere_bild_clip, bestimme_genre_wert
 from image_detection import erkenne_text, erkenne_gesichter
+from projection import projection, projectionMitHelligkeit
 
 #----------------------------- OSC-Send-Modul -------------------------------------#
 osc_ip = "10.40.35.126"  # <-- hier die IP-Adresse des Empfänger-Computers eintragen
@@ -51,7 +52,7 @@ def apply_tint(image, tint_shift):
         image[:, :, 2] *= 1 - abs(tint_shift)  # Rot senken
     return np.clip(image, 0, 255).astype(np.uint8)
 
-def finde_optimalen_weissabgleich(cap, thresholdWhite=75, thresholdBlack=25, schritte_temp=100, schritte_tint=0.025):
+def finde_optimalen_weissabgleich(cap, thresholdWhite=75, thresholdBlack=25, schritte_temp=1000, schritte_tint=0.05): # TODO: Vor dem CR auf schritte_temp=100 & schritte_tint=0.025 resetten
     """
     Findet die Kombination aus Temperatur und Tint, bei der der Weißanteil am höchsten ist.
     """
@@ -64,7 +65,7 @@ def finde_optimalen_weissabgleich(cap, thresholdWhite=75, thresholdBlack=25, sch
     original_tint = tint_shift   # Annahme: Ausgangstint ist 0.0
 
     # Temperatur-Bereich (typisch: 2800–6500 K)
-    for temp_candidate in range(2800, 3501, schritte_temp):
+    for temp_candidate in range(3100, 3201, schritte_temp): # TODO: Vor CR auf 2800 - 6501 resetten
         temp = temp_candidate
         apply_settings(cap)
 
@@ -73,7 +74,7 @@ def finde_optimalen_weissabgleich(cap, thresholdWhite=75, thresholdBlack=25, sch
             ret, _ = cap.read()
 
         # Tint-Werte im Bereich ±0.5 (entspricht starker Verschiebung)
-        for tint_candidate in np.arange(-0.75, 0.251, schritte_tint):
+        for tint_candidate in np.arange(0, 0.101, schritte_tint): # TODO: Vor CR auf - 1.5 bis 1.501 resetten
             ret, frame = cap.read()
             if not ret:
                 continue
@@ -208,6 +209,10 @@ def main():
             cv2.imwrite(dateiname, frame_tinted)
             print(f"📸 Bild gespeichert als: {dateiname}")
 
+            #------- Projektion starten -------#
+            # Bild mit Analyse anzeigen (Projektion)
+            projection(frame_tinted)
+
     #--------------------------- Bild-Analyse -------------------------------------#
             anzahl_cluster = 6
 
@@ -220,6 +225,10 @@ def main():
             helligkeit_gemappt = map_value(helligkeit, 0, 255, 20, 600)
 
             client.send_message("/grundton", float(helligkeit_gemappt))
+
+            #------- Helligkeit zur Projektion hinzufügen -------#
+            # Bild mit Analyse anzeigen (Projektion)
+            projectionMitHelligkeit(frame_tinted, helligkeit)
 
             #---------------- Farbanalyse ---------------#
             farbanteile = berechne_farbanteile(frame_tinted_analyse, 75, 25)
@@ -271,82 +280,8 @@ def main():
             for beschreibung, score in top3_Kategorien:
                 print(f"  - {beschreibung}: {score:.2%}")
             
-            genre_mapping = {
-                # 1 – Sehr harmonisch, ruhig, ästhetisch
-                "blank": 1,
-                "empty": 1,
-                "white canvas": 1,
-                "minimal": 1,
-
-                # 2 – Harmonisch mit Energie
-                "vivid": 2,
-                "expressive": 2,
-                "dynamic": 2,
-                "energetic": 2,
-                "structured": 2,
-                "colorful composition": 2,
-                "peaceful": 2,
-                "harmonious": 2,
-                "calm": 2,
-                "soothing": 2,
-                "balanced": 2,
-                "relaxing": 2,
-                "meditative": 2,
-                "elegant": 2,
-
-                # 3 – Neutral, technisch, durchschnittlich
-                "average": 3,
-                "neutral": 3,
-                "schematic": 3,
-                "technical": 3,
-                "basic": 3,
-                "unremarkable": 3,
-
-                # 4 – Leicht unruhig, erste Dissonanz
-                "clashing": 4,
-                "uneven": 4,
-                "tense": 4,
-                "chaotic sketch": 4,
-                "disharmony": 4,
-
-                # 5 – Deutlich unruhig, stressig
-                # 6 – Unästhetisch, visuell störend
-                # 7 – Extrem negativ, verstörend
-                "stressful": 7,
-                "chaotic": 7,
-                "overwhelming": 7,
-                "disorganized": 7,
-                "visual noise": 7,
-
-                "ugly": 7,
-                "harsh": 7,
-                "distorted": 7,
-                "unpleasant": 7,
-                "painful": 7,
-
-                "violent": 7,
-                "aggressive": 7,
-                "terrifying": 7,
-                "destructive": 7,
-                "angry": 7,
-                "disturbing": 7
-            }
-
-            def bestimme_genre_wert(top3_kategorien, genre_mapping):
-                """Bestimme Genre-Wert basierend auf dem Beschreibungstext mit höchstem Score."""
-                if not top3_kategorien:
-                    return 3  # Neutraler Fallback
-
-                beste_beschreibung = top3_kategorien[0][0].lower()
-
-                for key, wert in genre_mapping.items():
-                    if key in beste_beschreibung:
-                        return wert
-
-                return 3  # Fallback auf neutral
-
             # Genre bestimmen und per OSC senden
-            genre_wert = bestimme_genre_wert(top3_Kategorien, genre_mapping)
+            genre_wert = bestimme_genre_wert(top3_Kategorien)
             client.send_message("/genre", genre_wert)
 
             print(f"Gesendeter Genrewert: {genre_wert:.2f} --> von 1-7")

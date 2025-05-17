@@ -25,9 +25,10 @@ Otherwise the music is completely controlled by the pictures that people draw.
  - Torch-Vision: pip install torch torchvision
  - Optionale Visualisierungen: pip install matplotlib
  - Tesseract OCR: pip install pytesseract
+ - Screeninfo: pip install screeninfo
 
 Kompakt:
-pip install opencv-python numpy Pillow python-osc torch torchvision git+https://github.com/openai/CLIP.git ftfy regex tqdm matplotlib pytesseract
+pip install opencv-python numpy Pillow python-osc torch torchvision git+https://github.com/openai/CLIP.git ftfy regex tqdm matplotlib pytesseract screeninfo
 
 or
 

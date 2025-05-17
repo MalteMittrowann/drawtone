@@ -21,7 +21,7 @@ def animate_text_ticker(img, texts, y_pos, speed_px_per_sec, start_time):
     img = cv2.addWeighted(overlay, alpha, img, 1 - alpha, 0)
     return img
 
-def projection(image, analysis_text_lines, aufbaudauer=2.0, kachelgröße=25, bottom_space=300):
+def projection(image, analysis_text_lines, aufbaudauer=2.0, kachelgröße=25, bottom_space=300, fade_duration=0.3):
     monitore = get_monitors()
     if len(monitore) < 2:
         print("⚠️ Nur ein Bildschirm erkannt.")
@@ -41,20 +41,13 @@ def projection(image, analysis_text_lines, aufbaudauer=2.0, kachelgröße=25, bo
     bild_resized = cv2.resize(image, (bild_width, bild_height))
 
     anim_frame = np.zeros_like(bild_resized)
+    num_rows = (bild_height + kachelgröße - 1) // kachelgröße
+    num_cols = (bild_width + kachelgröße - 1) // kachelgröße
+    total_tiles = num_rows * num_cols
 
-    # Kacheln vorbereiten
-    tiles = []
-    for i in range(0, bild_height, kachelgröße):
-        for j in range(0, bild_width, kachelgröße):
-            y1 = i
-            y2 = min(i + kachelgröße, bild_height)
-            x1 = j
-            x2 = min(j + kachelgröße, bild_width)
-            tiles.append((y1, y2, x1, x2))
-
-    tile_count = len(tiles)
-    last_shown_index = 0
     start_time = time.time()
+    tile_times = [None] * total_tiles
+    shown_tiles = set()
 
     fenstername = "Projektion"
     cv2.namedWindow(fenstername, cv2.WND_PROP_FULLSCREEN)
@@ -63,18 +56,32 @@ def projection(image, analysis_text_lines, aufbaudauer=2.0, kachelgröße=25, bo
 
     while True:
         elapsed = time.time() - start_time
-        expected_tiles = int((elapsed / aufbaudauer) * tile_count)
-        expected_tiles = min(expected_tiles, tile_count)
+        tiles_to_show = min(int((elapsed / aufbaudauer) * total_tiles), total_tiles)
 
-        for idx in range(last_shown_index, expected_tiles):
-            y1, y2, x1, x2 = tiles[idx]
-            anim_frame[y1:y2, x1:x2] = bild_resized[y1:y2, x1:x2]
-        last_shown_index = expected_tiles
+        for tile_idx in range(tiles_to_show):
+            if tile_idx not in shown_tiles:
+                tile_times[tile_idx] = time.time()
+                shown_tiles.add(tile_idx)
 
-        overlay_frame = anim_frame.copy()
-        ticker_img = np.zeros_like(overlay_frame)
+        frame = anim_frame.copy()
+
+        for tile_idx in shown_tiles:
+            i = tile_idx // num_cols
+            j = tile_idx % num_cols
+            y1 = i * kachelgröße
+            y2 = min((i + 1) * kachelgröße, bild_height)
+            x1 = j * kachelgröße
+            x2 = min((j + 1) * kachelgröße, bild_width)
+            t0 = tile_times[tile_idx]
+            alpha = min((time.time() - t0) / fade_duration, 1.0)
+            tile_src = bild_resized[y1:y2, x1:x2].astype(np.float32)
+            tile_dst = frame[y1:y2, x1:x2].astype(np.float32)
+            tile_mix = cv2.addWeighted(tile_dst, 1 - alpha, tile_src, alpha, 0)
+            frame[y1:y2, x1:x2] = tile_mix.astype(np.uint8)
+
+        ticker_img = np.zeros_like(frame)
         ticker_img = animate_text_ticker(ticker_img, analysis_text_lines, y_pos=bild_height - 30, speed_px_per_sec=750, start_time=start_time)
-        final_frame = cv2.addWeighted(ticker_img, 0.4, overlay_frame, 0.6, 0)
+        final_frame = cv2.addWeighted(ticker_img, 0.4, frame, 0.6, 0)
 
         cv2.imshow(fenstername, final_frame)
 

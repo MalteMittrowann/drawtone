@@ -7,7 +7,7 @@ import time
 from image_analysis import berechne_durchschnittshelligkeit, berechne_farbanteile, berechne_segmentierungsgrad, berechne_frequenz_index, berechne_farbharmonie, berechne_bildrausch_index
 from image_classification import klassifiziere_bild_clip, bestimme_genre_wert
 from image_detection import erkenne_text, erkenne_gesichter
-from projection import projection, projectionMitHelligkeit
+from projection import projection
 
 #----------------------------- OSC-Send-Modul -------------------------------------#
 osc_ip = "10.40.35.126"  # <-- hier die IP-Adresse des Empfänger-Computers eintragen
@@ -209,10 +209,6 @@ def main():
             cv2.imwrite(dateiname, frame_tinted)
             print(f"📸 Bild gespeichert als: {dateiname}")
 
-            #------- Projektion starten -------#
-            # Bild mit Analyse anzeigen (Projektion)
-            projection(frame_tinted)
-
     #--------------------------- Bild-Analyse -------------------------------------#
             anzahl_cluster = 6
 
@@ -225,10 +221,6 @@ def main():
             helligkeit_gemappt = map_value(helligkeit, 0, 255, 20, 600)
 
             client.send_message("/grundton", float(helligkeit_gemappt))
-
-            #------- Helligkeit zur Projektion hinzufügen -------#
-            # Bild mit Analyse anzeigen (Projektion)
-            projectionMitHelligkeit(frame_tinted, helligkeit)
 
             #---------------- Farbanalyse ---------------#
             farbanteile = berechne_farbanteile(frame_tinted_analyse, 75, 25)
@@ -292,6 +284,20 @@ def main():
 
             client.send_message("/morph", 1)
             print("Abfahrt!")
+
+    #------------------------------ Projektion -------------------------------------#
+            analysis_text = [
+                f"Bildrauschen-Varianz: {bildrauschen_varianz:.2f}",
+                f"Bildrauschen-Index: {bildrauschen_index:.2f}",
+                f"Farbharmonie: {farbharmonie:.2f}",
+                f"Frequenzindex: {frequenz_index:.2f}",
+                f"Segmentierungsgrad: {segmentierungsgradClamped:.2f}",
+                f"Grundton: {helligkeit_gemappt:.2f}",
+                f"Helligkeit: {helligkeit:.2f}"
+            ]
+            #------- Projektion starten -------#
+            # Bild mit Analyse anzeigen (Projektion)
+            projection(frame_tinted, analysis_text, 10.0, 10)
 
     #-------------------------- Bild-Erkennung -------------------------------------#
             #text = erkenne_text(frame_tinted_analyse)

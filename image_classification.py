@@ -108,6 +108,7 @@ genre_mapping = {
     "empty": 1,
     "white canvas": 1,
     "minimal": 1,
+    "basic": 1,
 
     # 2 – Harmonisch mit Energie
     "vivid": 2,
@@ -130,7 +131,7 @@ genre_mapping = {
     "neutral": 3,
     "schematic": 3,
     "technical": 3,
-    "basic": 3,
+    
     "unremarkable": 3,
 
     # 4 – Leicht unruhig, erste Dissonanz

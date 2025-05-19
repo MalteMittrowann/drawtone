@@ -4,13 +4,13 @@ from datetime import datetime
 import os
 import numpy as np
 import time
-from image_analysis import berechne_durchschnittshelligkeit, berechne_farbanteile, berechne_segmentierungsgrad, berechne_frequenz_index, berechne_farbharmonie, berechne_bildrausch_index
+from image_analysis import berechne_durchschnittshelligkeit, berechne_farbanteile, berechne_segmentierungsgrad, berechne_frequenz_index, berechne_farbharmonie, berechne_bildrausch_index, berechne_farbschwerpunkt_index
 from image_classification import klassifiziere_bild_clip, bestimme_genre_wert
 from image_detection import erkenne_text, erkenne_gesichter
 from projection import projection
 
 #----------------------------- OSC-Send-Modul -------------------------------------#
-osc_ip = "78.104.153.86"  # <-- hier die IP-Adresse des Empfänger-Computers eintragen
+osc_ip = "10.40.35.126"  # <-- hier die IP-Adresse des Empfänger-Computers eintragen
 osc_port = 8000
 client = SimpleUDPClient(osc_ip, osc_port)
 
@@ -139,7 +139,7 @@ def main():
     apply_settings(cap)
 
     cv2.namedWindow("Morph-Time-Vorschau", cv2.WINDOW_NORMAL)
-    cv2.resizeWindow("Morph-Time-Vorschau", 400, 200)
+    cv2.resizeWindow("Morph-Time-Vorschau", 400, 200) 
 
     print("Druecke LEERTASTE für Bildaufnahme, ESC zum Beenden.")
     print("W/S: Exposure | E/D: Brightness | R/F: Contrast | T/G: Farbtemperatur | Z/H: Tint-Anpassen | A: Auto-WB")
@@ -228,6 +228,7 @@ def main():
             anzahl_cluster = 6
 
             client.send_message("/morphtime", morphtime)
+            print(f"Senden...morphtime: {morphtime:.2f}")
 
             #---------------- Helligkeit ----------------#
             helligkeit = berechne_durchschnittshelligkeit(frame_tinted_analyse)
@@ -236,6 +237,7 @@ def main():
             print(f"Durchschnittliche Helligkeit: {helligkeit:.2f}, Gemappte Hellgkeit: {helligkeit_gemappt:.2f}")
 
             client.send_message("/grundton", float(helligkeit_gemappt))
+            print(f"Senden...grundton: {helligkeit_gemappt:.2f}")
 
             #---------------- Farbanalyse ---------------#
             farbanteile = berechne_farbanteile(frame_tinted_analyse, 75, 25)
@@ -253,6 +255,7 @@ def main():
                     farbanteile_mapped = map_value(anteil, 0.025, 1.0, 0.7, 1.0)
 
                 client.send_message(f"/{farbe}", float(farbanteile_mapped))
+                print(f"Senden.../{farbe}: {farbanteile_mapped:.2f}")
 
             #------------ Segmentierungsgrad ------------#
             segmentierungsgrad = berechne_segmentierungsgrad(frame_tinted_analyse, anzahl_cluster)
@@ -261,25 +264,37 @@ def main():
             
             segmentierungsgradClamped = max(0.0, min(1.0, segmentierungsgrad))
             client.send_message("/segmentierungsgrad", segmentierungsgradClamped)
+            print(f"Senden...segmentierungsgrad: {segmentierungsgradClamped:.2f}")
 
             #------------- Frequenz-Index --------------#
             frequenz_index = berechne_frequenz_index(frame_tinted_analyse)
             print(f"Frequenz-Index: {frequenz_index:.2f} | Niedrige Frequenzen → große, flächige Strukturen (ruhige Bilder, wenig Details) | Hohe Frequenzen → viele Kanten, feine Details, Muster (z. B. Kritzeleien, Texturen, Rauschen)")
             print("🧭 Interpretation der Werte: < 0.1	Sehr flächig, fast keine feinen Details | 0.1 – 0.5	Eher ruhig, moderate Details | 0.5 – 1.0	Ausgewogen zwischen Fläche und Detail | > 1.0	Viele feine Details, starke Kanten, „wilde“ Bildstruktur | > 2.0 – 5.0	Sehr detailreich oder rauschig")
             
-            frequenz_index_mapped = map_value(frequenz_index, 0, 10, 0, 127)
+            frequenz_index_mapped = map_value(frequenz_index, 300, 600, 0, 127)
             frequenz_index_mapped_clamped = max(0.0, min(127.0, frequenz_index_mapped))
             client.send_message("/drumsample", frequenz_index_mapped_clamped)
+            print(f"Senden...drumsample: {frequenz_index_mapped_clamped:.2f}")
 
             #-------------- Farbharmonie ---------------#
-            farbharmonie = berechne_farbharmonie(frame_tinted_analyse, anzahl_cluster)
+            farbharmonie = berechne_farbharmonie(frame_tinted_analyse, anzahl_cluster, 20)
             print(f"Farbharmonie: {farbharmonie:.2f} | Große Abstände = starke Kontraste → „unharmonisch“ | Kleine Abstände = ähnliche Farben → „harmonisch“")
             print("🧠 Interpretation des Werts: 1.0 → Sehr harmonisch (ähnliche Farben) | 0.0 → Sehr kontrastreich (komplementäre Farben)")
+
+            client.send_message("/farbe", map_value(farbharmonie, 1.0, 0.4, 0.0, 1.0))
+            print(f"Senden...farbe: {farbharmonie:.2f}")
+
+            #---------- Farbschwerpunkt-Index ----------#
+            farbschwerpunkt_index = berechne_farbschwerpunkt_index(frame_tinted_analyse, 20)
+            print(f"Farbschwerpunkt-Index: {farbschwerpunkt_index:.2f}")
 
             #-------------- Bildrauschen ---------------#
             bildrauschen_index, bildrauschen_varianz = berechne_bildrausch_index(frame_tinted_analyse)
             print(f"Bildrauschen-Index: {bildrauschen_index:.2f} | Bildrauschen_Varianz: {bildrauschen_varianz: .2f} | Viele Kanten und hohe Bildfrequenzen = „visuelle Unruhe“")
             print("📊 Typische Werte: 0.0 – 0.2: Sehr glatt, kaum Details | 0.3 – 0.6: Mittlere Textur, normale Bilder | 0.7 – 1.0: Sehr detailreich oder visuell überladen")
+
+            client.send_message("/melosound", map_value(bildrauschen_index, 0.0, 1.0, 1.0, 5.0))
+            print(f"Senden...melosound: {bildrauschen_index:.2f}")
 
             #---------- Bild-Kategorisierung -----------#
             top3_Kategorien = klassifiziere_bild_clip(frame_tinted_analyse)
@@ -290,10 +305,10 @@ def main():
             # Genre bestimmen und per OSC senden
             genre_wert = bestimme_genre_wert(top3_Kategorien)
             client.send_message("/genre", genre_wert)
-
-            print(f"Gesendeter Genrewert: {genre_wert:.2f} --> von 1-7")
+            print(f"Senden...genre: {genre_wert:.2f}")
 
             client.send_message("/BPM", 180)
+            print(f"Senden...BPM: 180")
 
             time.sleep(0.2)
 
@@ -312,7 +327,7 @@ def main():
             ]
             #------- Projektion starten -------#
             # Bild mit Analyse anzeigen (Projektion)
-            projection(frame_tinted, analysis_text, 10.0, 10)
+            projection(frame_tinted, analysis_text, morphtime, 10, 300)
 
     #-------------------------- Bild-Erkennung -------------------------------------#
             #text = erkenne_text(frame_tinted_analyse)

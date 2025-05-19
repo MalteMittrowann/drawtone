@@ -55,25 +55,37 @@ def berechne_farbanteile(image, thresholdWhite=75, thresholdBlack=25):
     farbanteile = {farbe: count / total_pixels for farbe, count in farben.items()}
     return farbanteile
 
-# ---------------------- Segmentierungsgrad ---------------------- #
-def berechne_segmentierungsgrad(image, anzahl_cluster=6):
-    # Bild in Float32 und in 2D umwandeln (für kmeans)
-    pixel = image.reshape((-1, 3)).astype(np.float32)
+# ------------------------- Segmentierungsgrad ------------------------- #
+def berechne_segmentierungsgrad(image, anzahl_cluster=20, farbschwelle=25):
+    # In CIELab konvertieren für bessere Farbdistanzanalyse
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2Lab)
+    pixels = lab.reshape((-1, 3))
 
-    # Kriterien für das Beenden des k-means Algorithmus
-    kriterien = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, 1.0)
+    # Chroma = Farbabstand von Grau (aus a und b)
+    a = pixels[:, 1].astype(np.int16) - 128
+    b = pixels[:, 2].astype(np.int16) - 128
+    chroma = np.sqrt(a**2 + b**2)
+
+    # Nur farbige Pixel berücksichtigen
+    mask = chroma > farbschwelle
+    relevante_pixel = pixels[mask]
+
+    if len(relevante_pixel) < anzahl_cluster:
+        return 0.0  # zu wenig relevante Pixel
+
+    relevante_pixel = relevante_pixel.astype(np.float32)
 
     # k-Means-Clustering
-    _, labels, _ = cv2.kmeans(pixel, anzahl_cluster, None, kriterien, 10, cv2.KMEANS_RANDOM_CENTERS) # type: ignore
+    kriterien = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, 1.0)
+    _, labels, _ = cv2.kmeans(relevante_pixel, anzahl_cluster, None, kriterien, 10, cv2.KMEANS_RANDOM_CENTERS)
 
-    # Anzahl Pixel pro Cluster zählen
+    # Clustergrößen auswerten
     _, counts = np.unique(labels, return_counts=True)
 
-    # Einfacher Maßwert für Segmentierung: Verhältnis kleinster zu größter Cluster
-    segmentierungsgrad = counts.std() / counts.mean()  # Variabilität der Clustergrößen
+    # Segmentierungsgrad = Streuung der Clustergrößen
+    segmentierungsgrad = counts.std() / counts.mean()
 
     return segmentierungsgrad
-
 
 # ---------------------- Bildfrequenzanalyse ---------------------- #
 def berechne_frequenz_index(image):
@@ -81,93 +93,68 @@ def berechne_frequenz_index(image):
     f = np.fft.fft2(gray)
     fshift = np.fft.fftshift(f)
     magnitude_spectrum = np.abs(fshift)
-    
-    # Frequenzindex = Verhältnis hoher zu niedriger Frequenzen
+    magnitude_spectrum = np.log1p(magnitude_spectrum)  # Log-Skalierung
+
     mitte = magnitude_spectrum.shape[0] // 2
-    radius = mitte // 2
+    radius = mitte // 4  # Kleinerer Low-Freq-Radius
     y, x = np.ogrid[:magnitude_spectrum.shape[0], :magnitude_spectrum.shape[1]]
     mask = (x - mitte)**2 + (y - mitte)**2 <= radius**2
 
     low_freq = np.sum(magnitude_spectrum[mask])
     high_freq = np.sum(magnitude_spectrum[~mask])
-    
+
     if low_freq == 0:
         return 0
-    return high_freq / low_freq
+    return (high_freq ** 1.2) / (low_freq + 1e-6)  # Empfindlichere Gewichtung
 
 
 # --------------------------- Farbharmonie --------------------------- #
-def berechne_farbharmonie(image, anzahl_cluster=6):
+def berechne_farbharmonie(image, anzahl_cluster=6, sättigungs_schwelle=20):
     # Bild in HSV konvertieren
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    pixels = hsv.reshape((-1, 3)).astype(np.float32)
+    pixels = hsv.reshape((-1, 3))
 
-    # KMeans auf HSV anwenden
+    # Nur farbige Pixel verwenden (Sättigung > Schwelle)
+    pixels = pixels[pixels[:, 1] > sättigungs_schwelle]
+    if len(pixels) < anzahl_cluster:
+        return 0.0  # Nicht genug farbige Pixel vorhanden
+
+    pixels = np.float32(pixels)
+
+    # KMeans-Clustering auf farbige Pixel
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 50, 0.2)
-    _, labels, centers = cv2.kmeans(pixels, anzahl_cluster, None, criteria, 10, cv2.KMEANS_RANDOM_CENTERS)  # type: ignore
+    _, labels, centers = cv2.kmeans(pixels, anzahl_cluster, None, criteria, 10, cv2.KMEANS_RANDOM_CENTERS)
 
-    hue_values = centers[:, 0]  # Nur die H-Komponente (Farbton)
+    # Cluster-Häufigkeiten
+    counts = np.bincount(labels.flatten())
+    total_weight = 0
+    total_distance = 0
 
-    # ---------------------- Punkt 2: Farbkreis-Abstände ---------------------- #
-    def hue_distance(h1, h2):
-        d = abs(h1 - h2)
-        return min(d, 180 - d)  # HSV-H geht von 0–180 in OpenCV
+    # HS-Abstand zwischen allen Clusterpaaren berechnen (gewichtet)
+    for i in range(len(centers)):
+        for j in range(i + 1, len(centers)):
+            # Farbdistanz im HS-Raum (Hue zyklisch, Sat linear)
+            h1, s1 = centers[i][0], centers[i][1]
+            h2, s2 = centers[j][0], centers[j][1]
+            dh = min(abs(h1 - h2), 180 - abs(h1 - h2)) / 180.0  # normiert auf 0–1
+            ds = abs(s1 - s2) / 255.0
+            dist = np.sqrt(dh**2 + ds**2)
 
-    abstaende = []
-    for i in range(len(hue_values)):
-        for j in range(i + 1, len(hue_values)):
-            abstaende.append(hue_distance(hue_values[i], hue_values[j]))
+            # Gewicht = Produkt der beiden Clusterhäufigkeiten
+            weight = counts[i] * counts[j]
+            total_distance += dist * weight
+            total_weight += weight
 
-    if not abstaende:
-        return 0
+    if total_weight == 0:
+        return 0.0
 
-    durchschnittlicher_abstand = np.mean(abstaende)
+    durchschnittliche_distanz = total_distance / total_weight
 
-    # ---------------------- Punkt 3: Adobe-inspirierte Harmonie ---------------------- #
-    def bewertung_farbmuster(hue_values):
-        scores = []
-        hue_values = sorted(hue_values)
+    # Harmoniewert invertieren (0 = disharmonisch, 1 = harmonisch)
+    harmonie_index = 1.0 - durchschnittliche_distanz
+    harmonie_index = max(0.0, min(1.0, harmonie_index))  # Begrenzung auf [0, 1]
 
-        # 1. Komplementärfarben: Abstand nahe 90° (180° auf OpenCV-Skala)
-        for i in range(len(hue_values)):
-            for j in range(i + 1, len(hue_values)):
-                d = hue_distance(hue_values[i], hue_values[j])
-                diff = abs(d - 90)
-                score = max(0, 1 - (diff / 90))  # perfekte Komplementärfarbe = 1
-                scores.append(score)
-
-        # 2. Triade (je 60° Abstand im 180°-Kreis)
-        for i in range(len(hue_values)):
-            for j in range(i + 1, len(hue_values)):
-                d = hue_distance(hue_values[i], hue_values[j])
-                diff = abs(d - 60)
-                score = max(0, 1 - (diff / 60))
-                scores.append(score)
-
-        # 3. Analogfarben (nahe beieinander, max 20°)
-        for i in range(len(hue_values)):
-            for j in range(i + 1, len(hue_values)):
-                d = hue_distance(hue_values[i], hue_values[j])
-                score = max(0, 1 - (d / 20)) if d <= 20 else 0
-                scores.append(score) 
-
-        if not scores:
-            return 0
-
-        return np.mean(scores)
-
-    muster_score = bewertung_farbmuster(hue_values)
-
-    # ---------------------- Kombination & Normierung ---------------------- #
-    # Durchschnittlicher Abstand normiert: 0 (chaotisch) bis 1 (eng zusammen)
-    abstand_score = 1 - (durchschnittlicher_abstand / 90.0)
-    abstand_score = np.clip(abstand_score, 0, 1)
-
-    # Kombinierter Score (gewichtbar)
-    harmonie_index = (abstand_score + muster_score) / 2.0
-    harmonie_index = np.clip(harmonie_index, 0, 1)
-
-    return harmonie_index  
+    return harmonie_index
 
 # ------------------------- Bildrausch-Index -------------------------- #
 def berechne_bildrausch_index(image):
@@ -186,3 +173,29 @@ def berechne_bildrausch_index(image):
     index = np.tanh(varianz / 500)  # Sanfte Normierung auf ca. 0–1
 
     return index, varianz
+
+# ------------------------- Farbschwerpunkt-Index -------------------------- #
+def berechne_farbschwerpunkt_index(image, sättigungs_schwelle=20):
+    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    pixels = hsv.reshape((-1, 3))
+    pixels = pixels[pixels[:, 1] > sättigungs_schwelle]  # Nur gesättigte Farben
+
+    if len(pixels) == 0:
+        return 0.0
+
+    # Farben auf Einheitskreis (Hue als Winkel)
+    hue = pixels[:, 0] * 2  # OpenCV Hue [0–180] → [0–360]
+    hue_rad = np.deg2rad(hue)
+    x = np.cos(hue_rad)
+    y = np.sin(hue_rad)
+
+    # Mittelpunkt der Hue-Verteilung (Vektoraddition)
+    mean_x = np.mean(x)
+    mean_y = np.mean(y)
+    konzentration = np.sqrt(mean_x**2 + mean_y**2)
+
+    # Der Wert liegt zwischen 0 (völlig zerstreut) und 1 (alle Farben gleich)
+    # Wir kehren ihn um, damit hoher Wert = hohe Streuung (wie bei Segmentierung)
+    schwerpunkt_index = 1.0 - konzentration
+
+    return max(0.0, min(1.0, schwerpunkt_index))

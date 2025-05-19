@@ -10,7 +10,7 @@ from image_detection import erkenne_text, erkenne_gesichter
 from projection import projection
 
 #----------------------------- OSC-Send-Modul -------------------------------------#
-osc_ip = "10.40.35.126"  # <-- hier die IP-Adresse des Empfänger-Computers eintragen
+osc_ip = "78.104.153.86"  # <-- hier die IP-Adresse des Empfänger-Computers eintragen
 osc_port = 8000
 client = SimpleUDPClient(osc_ip, osc_port)
 
@@ -23,6 +23,12 @@ contrast = 50.0
 temp = 3000
 tint_shift = 0.0
 auto_wb = False
+
+# Startwerte für Morph-Time
+morphtime = 60  # Startwert in Sekunden
+morphtime_min = 20
+morphtime_max = 120
+morphtime_step = 1  # Schrittgröße pro Tastendruck
 
 def apply_settings(cap):
 
@@ -52,7 +58,7 @@ def apply_tint(image, tint_shift):
         image[:, :, 2] *= 1 - abs(tint_shift)  # Rot senken
     return np.clip(image, 0, 255).astype(np.uint8)
 
-def finde_optimalen_weissabgleich(cap, thresholdWhite=75, thresholdBlack=25, schritte_temp=1000, schritte_tint=0.05): # TODO: Vor dem CR auf schritte_temp=100 & schritte_tint=0.025 resetten
+def finde_optimalen_weissabgleich(cap, thresholdWhite=75, thresholdBlack=25, schritte_temp=100, schritte_tint=0.025): # TODO: Vor dem CR auf schritte_temp=100 & schritte_tint=0.025 resetten
     """
     Findet die Kombination aus Temperatur und Tint, bei der der Weißanteil am höchsten ist.
     """
@@ -65,7 +71,7 @@ def finde_optimalen_weissabgleich(cap, thresholdWhite=75, thresholdBlack=25, sch
     original_tint = tint_shift   # Annahme: Ausgangstint ist 0.0
 
     # Temperatur-Bereich (typisch: 2800–6500 K)
-    for temp_candidate in range(3100, 3201, schritte_temp): # TODO: Vor CR auf 2800 - 6501 resetten
+    for temp_candidate in range(2600, 3501, schritte_temp): # TODO: Vor CR auf 2800 - 6501 resetten
         temp = temp_candidate
         apply_settings(cap)
 
@@ -74,7 +80,7 @@ def finde_optimalen_weissabgleich(cap, thresholdWhite=75, thresholdBlack=25, sch
             ret, _ = cap.read()
 
         # Tint-Werte im Bereich ±0.5 (entspricht starker Verschiebung)
-        for tint_candidate in np.arange(0, 0.101, schritte_tint): # TODO: Vor CR auf - 1.5 bis 1.501 resetten
+        for tint_candidate in np.arange(-0.75, 0.251, schritte_tint): # TODO: Vor CR auf - 1.5 bis 1.501 resetten
             ret, frame = cap.read()
             if not ret:
                 continue
@@ -110,7 +116,7 @@ def map_value(x, in_min, in_max, out_min, out_max):
 
 #-------------------------------- Main-Function -------------------------------------#
 def main():
-    global exposure, brightness, contrast, temp, auto_wb, tint_shift
+    global exposure, brightness, contrast, temp, auto_wb, tint_shift, morphtime, morphtime_min, morphtime_max, morphtime_step
 
     cap = cv2.VideoCapture(0, cv2.CAP_MSMF)
 
@@ -131,6 +137,9 @@ def main():
 
     # Kamera-Kalibrierung starten
     apply_settings(cap)
+
+    cv2.namedWindow("Morph-Time-Vorschau", cv2.WINDOW_NORMAL)
+    cv2.resizeWindow("Morph-Time-Vorschau", 400, 200)
 
     print("Druecke LEERTASTE für Bildaufnahme, ESC zum Beenden.")
     print("W/S: Exposure | E/D: Brightness | R/F: Contrast | T/G: Farbtemperatur | Z/H: Tint-Anpassen | A: Auto-WB")
@@ -193,6 +202,12 @@ def main():
         elif key == ord('a'):
             auto_wb = not auto_wb
             print(f"Auto Weißabgleich: {'AN' if auto_wb else 'AUS'}")
+        elif key == ord('u'):  # Erhöhe Morph-Time
+            morphtime = min(morphtime + morphtime_step, morphtime_max)
+            print(f"↑ Morph-Time: {morphtime} Sek.")
+        elif key == ord('j'):  # Verringere Morph-Time
+            morphtime = max(morphtime - morphtime_step, morphtime_min)
+            print(f"↓ Morph-Time: {morphtime} Sek.")
 
     #------------------------------- Bild abspeichern ------------------------------------#
         elif key == 32:  # Leertaste
@@ -212,13 +227,13 @@ def main():
     #--------------------------- Bild-Analyse -------------------------------------#
             anzahl_cluster = 6
 
-            client.send_message("/morphtime", 2.0)
+            client.send_message("/morphtime", morphtime)
 
             #---------------- Helligkeit ----------------#
             helligkeit = berechne_durchschnittshelligkeit(frame_tinted_analyse)
-            print(f"Durchschnittliche Helligkeit: {helligkeit:.2f}")
 
             helligkeit_gemappt = map_value(helligkeit, 0, 255, 20, 600)
+            print(f"Durchschnittliche Helligkeit: {helligkeit:.2f}, Gemappte Hellgkeit: {helligkeit_gemappt:.2f}")
 
             client.send_message("/grundton", float(helligkeit_gemappt))
 
@@ -307,6 +322,21 @@ def main():
 
         # Nach Tastenänderung Settings erneut anwenden
         apply_settings(cap)
+
+    #----------------------------- Morphtime-Werte anzeigen ------------------------------#
+
+        # Vorschau-Bild erzeugen
+        preview_img = np.zeros((200, 400, 3), dtype=np.uint8)
+        text = f"Morph-Time: {morphtime}s"
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 1
+        thickness = 2
+        text_size = cv2.getTextSize(text, font, font_scale, thickness)[0]
+        text_x = (preview_img.shape[1] - text_size[0]) // 2
+        text_y = (preview_img.shape[0] + text_size[1]) // 2
+
+        cv2.putText(preview_img, text, (text_x, text_y), font, font_scale, (0, 255, 0), thickness, cv2.LINE_AA)
+        cv2.imshow("Morph-Time-Vorschau", preview_img)
 
     cap.release()
     cv2.destroyAllWindows()

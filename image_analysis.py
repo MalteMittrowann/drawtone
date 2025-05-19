@@ -100,42 +100,74 @@ def berechne_frequenz_index(image):
 def berechne_farbharmonie(image, anzahl_cluster=6):
     # Bild in HSV konvertieren
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    h, s, v = cv2.split(hsv)
+    pixels = hsv.reshape((-1, 3)).astype(np.float32)
 
-    # Nur Farbton (H) und Sättigung (S) verwenden, um Farbabstand zu messen
-    pixels = hsv.reshape((-1, 3))
-    pixels = np.float32(pixels)
-
-    # KMeans auf HSV anwenden (optional gewichtet auf H und S)
+    # KMeans auf HSV anwenden
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 50, 0.2)
-    _, labels, centers = cv2.kmeans(pixels, anzahl_cluster, None, criteria, 10, cv2.KMEANS_RANDOM_CENTERS) # type: ignore
+    _, labels, centers = cv2.kmeans(pixels, anzahl_cluster, None, criteria, 10, cv2.KMEANS_RANDOM_CENTERS)  # type: ignore
 
-    # Nur die H-Komponente (Farbton) extrahieren
-    hue_values = centers[:, 0]  # H-Komponente aus HSV
+    hue_values = centers[:, 0]  # Nur die H-Komponente (Farbton)
 
-    # Zyklische Distanz im Farbkreis berechnen
+    # ---------------------- Punkt 2: Farbkreis-Abstände ---------------------- #
     def hue_distance(h1, h2):
         d = abs(h1 - h2)
         return min(d, 180 - d)  # HSV-H geht von 0–180 in OpenCV
 
-    # Alle Paarabstände berechnen
-    total_distance = 0
-    count = 0
+    abstaende = []
     for i in range(len(hue_values)):
         for j in range(i + 1, len(hue_values)):
-            total_distance += hue_distance(hue_values[i], hue_values[j])
-            count += 1
+            abstaende.append(hue_distance(hue_values[i], hue_values[j]))
 
-    # Durchschnittlicher Farbtonabstand
-    if count == 0:
+    if not abstaende:
         return 0
-    durchschnittlicher_abstand = total_distance / count
 
-    # Optional normieren (0–90) und invertieren, damit hohe Werte = harmonisch
-    harmonie_index = 1 - (durchschnittlicher_abstand / 90.0)  # 0 = max Kontrast, 1 = perfekte Harmonie
-    harmonie_index = max(0.0, min(1.0, harmonie_index))  # Begrenzen auf 0–1
+    durchschnittlicher_abstand = np.mean(abstaende)
 
-    return harmonie_index
+    # ---------------------- Punkt 3: Adobe-inspirierte Harmonie ---------------------- #
+    def bewertung_farbmuster(hue_values):
+        scores = []
+        hue_values = sorted(hue_values)
+
+        # 1. Komplementärfarben: Abstand nahe 90° (180° auf OpenCV-Skala)
+        for i in range(len(hue_values)):
+            for j in range(i + 1, len(hue_values)):
+                d = hue_distance(hue_values[i], hue_values[j])
+                diff = abs(d - 90)
+                score = max(0, 1 - (diff / 90))  # perfekte Komplementärfarbe = 1
+                scores.append(score)
+
+        # 2. Triade (je 60° Abstand im 180°-Kreis)
+        for i in range(len(hue_values)):
+            for j in range(i + 1, len(hue_values)):
+                d = hue_distance(hue_values[i], hue_values[j])
+                diff = abs(d - 60)
+                score = max(0, 1 - (diff / 60))
+                scores.append(score)
+
+        # 3. Analogfarben (nahe beieinander, max 20°)
+        for i in range(len(hue_values)):
+            for j in range(i + 1, len(hue_values)):
+                d = hue_distance(hue_values[i], hue_values[j])
+                score = max(0, 1 - (d / 20)) if d <= 20 else 0
+                scores.append(score) 
+
+        if not scores:
+            return 0
+
+        return np.mean(scores)
+
+    muster_score = bewertung_farbmuster(hue_values)
+
+    # ---------------------- Kombination & Normierung ---------------------- #
+    # Durchschnittlicher Abstand normiert: 0 (chaotisch) bis 1 (eng zusammen)
+    abstand_score = 1 - (durchschnittlicher_abstand / 90.0)
+    abstand_score = np.clip(abstand_score, 0, 1)
+
+    # Kombinierter Score (gewichtbar)
+    harmonie_index = (abstand_score + muster_score) / 2.0
+    harmonie_index = np.clip(harmonie_index, 0, 1)
+
+    return harmonie_index  
 
 # ------------------------- Bildrausch-Index -------------------------- #
 def berechne_bildrausch_index(image):
@@ -148,7 +180,7 @@ def berechne_bildrausch_index(image):
     # Varianz der Laplace-Antwort als Maß für Bildrauschen/Unruhe
     varianz = np.var(laplacian)
 
-    # Optional normieren (je nach Erfahrungswerten)
+    # Optional normieren (je nach Erfahrungswerten) 
     # Hier: 0 = keine Kanten, >1000 = sehr detailreich
     # Du kannst den Bereich anpassen basierend auf Tests
     index = np.tanh(varianz / 500)  # Sanfte Normierung auf ca. 0–1

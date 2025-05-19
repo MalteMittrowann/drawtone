@@ -15,7 +15,7 @@ def animate_text_ticker(img, texts, y_pos, speed_px_per_sec, start_time):
     x = x_start
     overlay = img.copy()
     for i, text in enumerate(texts):
-        cv2.putText(overlay, text, (x, y_pos), font, font_scale, (255,255,255), font_thickness)
+        cv2.putText(overlay, text, (x, y_pos), font, font_scale, (0,255,0), font_thickness)
         x += text_widths[i] + space_px
     alpha = 0.5
     img = cv2.addWeighted(overlay, alpha, img, 1 - alpha, 0)

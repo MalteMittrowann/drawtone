@@ -3,25 +3,51 @@ import numpy as np
 import time
 from screeninfo import get_monitors
 
-def animate_text_ticker(img, texts, y_pos, speed_px_per_sec, start_time):
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = 5
-    font_thickness = 10
-    space_px = 300
-    text_widths = [cv2.getTextSize(text, font, font_scale, font_thickness)[0][0] for text in texts]
-    banner_length = sum(text_widths) + space_px * (len(texts) - 1)
-    elapsed = time.time() - start_time
-    x_start = int((elapsed * speed_px_per_sec) % (banner_length + img.shape[1])) - banner_length
-    x = x_start
-    overlay = img.copy()
-    for i, text in enumerate(texts):
-        cv2.putText(overlay, text, (x, y_pos), font, font_scale, (0,255,0), font_thickness)
-        x += text_widths[i] + space_px
-    alpha = 0.5
-    img = cv2.addWeighted(overlay, alpha, img, 1 - alpha, 0)
-    return img
+# Hilfsfunktionen für einzelne Analysen
+from analysenFuerProjektion import (
+    berechne_bildrausch_index, visualisiere_bildrausch,
+    berechne_farbharmonie, visualisiere_farbharmonie,
+    berechne_farbschwerpunkt, visualisiere_farbschwerpunkt,
+    berechne_frequenzverteilung, visualisiere_frequenzanalyse,
+    berechne_segmentierungsgrad, visualisiere_segmentierung,
+    berechne_farbanteile, visualisiere_farbanteile
+)
 
-def projection(image, analysis_text_lines, aufbaudauer=2.0, kachelgröße=25, bottom_space=300):
+def erstelle_analysen_vorschau(bild):
+    vorschauen = []
+
+    # Bildrausch
+    index, _ = berechne_bildrausch_index(bild)
+    v1 = visualisiere_bildrausch(bild.copy())
+    vorschauen.append(v1)
+
+    # Farbharmonie
+    h = berechne_farbharmonie(bild.copy())
+    v2 = visualisiere_farbharmonie(bild.copy())
+    vorschauen.append(v2)
+
+    # Farbschwerpunkt
+    s = berechne_farbschwerpunkt(bild.copy())
+    v3 = visualisiere_farbschwerpunkt(bild.copy())
+    vorschauen.append(v3)
+
+    # Frequenzanalyse
+    f_index = berechne_frequenzverteilung(bild.copy())
+    v4 = visualisiere_frequenzanalyse(bild.copy())
+    vorschauen.append(v4)
+
+    # Segmentierung
+    seg = berechne_segmentierungsgrad(bild.copy(), 12, 25)
+    v5 = visualisiere_segmentierung(bild.copy())
+    vorschauen.append(v5)
+
+    # Farbanteile
+    v6 = visualisiere_farbanteile(bild.copy())
+    vorschauen.append(v6)
+
+    return vorschauen
+
+def projection(image, aufbaudauer=2.0, kachelgröße=25, bottom_space=500):
     monitore = get_monitors()
     if len(monitore) < 2:
         print("⚠️ Nur ein Bildschirm erkannt.")
@@ -33,16 +59,22 @@ def projection(image, analysis_text_lines, aufbaudauer=2.0, kachelgröße=25, bo
         x, y = monitor.x, monitor.y
         monitor_width = monitor.width
         monitor_height = monitor.height
-        print(f"📺 Zweitmonitor: Position = ({x}, {y}), Größe = {monitor_width}x{monitor_height}")
 
+    # Aufteilung: obere Hälfte = Bild mit Animation, untere Hälfte = Vorschauen
     h, w, _ = image.shape
-    bild_height = monitor_height - bottom_space
+    bild_height = int(monitor_height * 0.55)
     bild_width = monitor_width
     bild_resized = cv2.resize(image, (bild_width, bild_height))
 
+    # Analysevorschauen vorbereiten (feste Höhe)
+    analysen = erstelle_analysen_vorschau(image)
+    vorschau_height = monitor_height - bild_height
+    einzel_width = int(monitor_width / len(analysen))
+    analysen_resized = [cv2.resize(a, (einzel_width, vorschau_height)) for a in analysen]
+    analysen_row = np.hstack(analysen_resized)
+
     anim_frame = np.zeros_like(bild_resized)
 
-    # Kacheln vorbereiten
     tiles = []
     for i in range(0, bild_height, kachelgröße):
         for j in range(0, bild_width, kachelgröße):
@@ -71,14 +103,20 @@ def projection(image, analysis_text_lines, aufbaudauer=2.0, kachelgröße=25, bo
             anim_frame[y1:y2, x1:x2] = bild_resized[y1:y2, x1:x2]
         last_shown_index = expected_tiles
 
-        overlay_frame = anim_frame.copy()
-        ticker_img = np.zeros_like(overlay_frame)
-        ticker_img = animate_text_ticker(ticker_img, analysis_text_lines, y_pos=bild_height - 30, speed_px_per_sec=750, start_time=start_time)
-        final_frame = cv2.addWeighted(ticker_img, 0.4, overlay_frame, 0.6, 0)
+        # Bild mit Vorschauen kombinieren
+        full_frame = np.vstack([anim_frame, analysen_row])
 
-        cv2.imshow(fenstername, final_frame)
+        cv2.imshow(fenstername, full_frame)
 
         if cv2.waitKey(1) & 0xFF == 27:
             break
 
     cv2.destroyAllWindows()
+
+# Beispielaufruf (nur falls direkt ausgeführt)
+if __name__ == "__main__":
+    testbild = cv2.imread("testbild.jpg")
+    if testbild is not None:
+        projection(testbild)
+    else:
+        print("❌ Bild konnte nicht geladen werden.")

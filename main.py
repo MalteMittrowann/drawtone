@@ -327,7 +327,7 @@ def main():
             ]
             #------- Projektion starten -------#
             # Bild mit Analyse anzeigen (Projektion)
-            projection(frame_tinted, analysis_text, morphtime, 10, 300)
+            projection(frame_tinted, morphtime, 10, 500)
 
     #-------------------------- Bild-Erkennung -------------------------------------#
             #text = erkenne_text(frame_tinted_analyse)

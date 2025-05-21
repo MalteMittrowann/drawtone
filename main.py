@@ -8,6 +8,7 @@ from image_analysis import berechne_durchschnittshelligkeit, berechne_farbanteil
 from image_classification import klassifiziere_bild_clip, bestimme_genre_wert
 from image_detection import erkenne_text, erkenne_gesichter
 from projection import projection
+from analysenFuerProjektion import visualisiere_bildrausch, visualisiere_farbharmonie, visualisiere_farbschwerpunkt, visualisiere_frequenzanalyse, visualisiere_segmentierung
 
 #----------------------------- OSC-Send-Modul -------------------------------------#
 osc_ip = "10.40.35.126"  # <-- hier die IP-Adresse des Empfänger-Computers eintragen
@@ -271,7 +272,7 @@ def main():
             print(f"Frequenz-Index: {frequenz_index:.2f} | Niedrige Frequenzen → große, flächige Strukturen (ruhige Bilder, wenig Details) | Hohe Frequenzen → viele Kanten, feine Details, Muster (z. B. Kritzeleien, Texturen, Rauschen)")
             print("🧭 Interpretation der Werte: < 0.1	Sehr flächig, fast keine feinen Details | 0.1 – 0.5	Eher ruhig, moderate Details | 0.5 – 1.0	Ausgewogen zwischen Fläche und Detail | > 1.0	Viele feine Details, starke Kanten, „wilde“ Bildstruktur | > 2.0 – 5.0	Sehr detailreich oder rauschig")
             
-            frequenz_index_mapped = map_value(frequenz_index, 300, 600, 0, 127)
+            frequenz_index_mapped = map_value(frequenz_index, 200, 600, 0, 127)
             frequenz_index_mapped_clamped = max(0.0, min(127.0, frequenz_index_mapped))
             client.send_message("/drumsample", frequenz_index_mapped_clamped)
             print(f"Senden...drumsample: {frequenz_index_mapped_clamped:.2f}")
@@ -316,18 +317,25 @@ def main():
             print("Abfahrt!")
 
     #------------------------------ Projektion -------------------------------------#
-            analysis_text = [
-                f"Bildrauschen-Varianz: {bildrauschen_varianz:.2f}",
-                f"Bildrauschen-Index: {bildrauschen_index:.2f}",
-                f"Farbharmonie: {farbharmonie:.2f}",
-                f"Frequenzindex: {frequenz_index:.2f}",
-                f"Segmentierungsgrad: {segmentierungsgradClamped:.2f}",
-                f"Grundton: {helligkeit_gemappt:.2f}",
-                f"Helligkeit: {helligkeit:.2f}"
-            ]
+            analysewerte = {
+                "bildrausch_index": bildrauschen_index,
+                "farbharmonie": farbharmonie,
+                "farbschwerpunkt": farbschwerpunkt_index,
+                "frequenzverteilung": frequenz_index,
+                "segmentierungsgrad": segmentierungsgrad,
+            }
+
+            analysebilder = {
+                "bildrausch_index": visualisiere_bildrausch(frame_tinted_analyse),
+                "farbharmonie": visualisiere_farbharmonie(frame_tinted_analyse),
+                "farbschwerpunkt": visualisiere_farbschwerpunkt(frame_tinted_analyse),
+                "frequenzverteilung": visualisiere_frequenzanalyse(frame_tinted_analyse),
+                "segmentierungsgrad": visualisiere_segmentierung(frame_tinted_analyse)
+            }
+
             #------- Projektion starten -------#
             # Bild mit Analyse anzeigen (Projektion)
-            projection(frame_tinted, morphtime, 10, 500)
+            projection(frame_tinted, analysebilder, analysewerte, morphtime, kachelgröße=30, bottom_space=250)
 
     #-------------------------- Bild-Erkennung -------------------------------------#
             #text = erkenne_text(frame_tinted_analyse)

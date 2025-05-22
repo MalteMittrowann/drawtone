@@ -4,11 +4,11 @@ from datetime import datetime
 import os
 import numpy as np
 import time
-from image_analysis import berechne_durchschnittshelligkeit, berechne_farbanteile, berechne_segmentierungsgrad, berechne_frequenz_index, berechne_farbharmonie, berechne_bildrausch_index, berechne_farbschwerpunkt_index
-from image_classification import klassifiziere_bild_clip, bestimme_genre_wert
-from image_detection import erkenne_text, erkenne_gesichter
-from projection import projection
-from analysenFuerProjektion import visualisiere_bildrausch, visualisiere_farbharmonie, visualisiere_farbschwerpunkt, visualisiere_frequenzanalyse, visualisiere_segmentierung
+from analysen.image_analysis import berechne_durchschnittshelligkeit, berechne_farbanteile, berechne_segmentierungsgrad, berechne_frequenz_index, berechne_farbharmonie, berechne_bildrausch_index, berechne_farbschwerpunkt_index
+from analysen.image_classification import klassifiziere_bild_clip, bestimme_genre_wert
+from analysen.image_detection import erkenne_text, erkenne_gesichter
+from projektion.projection import projection
+from projektion.analysenFuerProjektion import visualisiere_bildrausch, visualisiere_farbharmonie, visualisiere_farbschwerpunkt, visualisiere_frequenzanalyse, visualisiere_segmentierung
 
 #----------------------------- OSC-Send-Modul -------------------------------------#
 osc_ip = "10.40.35.126"  # <-- hier die IP-Adresse des Empfänger-Computers eintragen

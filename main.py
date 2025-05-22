@@ -140,7 +140,7 @@ def main():
     apply_settings(cap)
 
     cv2.namedWindow("Morph-Time-Vorschau", cv2.WINDOW_NORMAL)
-    cv2.resizeWindow("Morph-Time-Vorschau", 400, 200) 
+    cv2.resizeWindow("Morph-Time-Vorschau", 1600, 800) 
 
     print("Druecke LEERTASTE für Bildaufnahme, ESC zum Beenden.")
     print("W/S: Exposure | E/D: Brightness | R/F: Contrast | T/G: Farbtemperatur | Z/H: Tint-Anpassen | A: Auto-WB")
@@ -322,20 +322,12 @@ def main():
                 "farbharmonie": farbharmonie,
                 "farbschwerpunkt": farbschwerpunkt_index,
                 "frequenzverteilung": frequenz_index,
-                "segmentierungsgrad": segmentierungsgrad,
-            }
-
-            analysebilder = {
-                "bildrausch_index": visualisiere_bildrausch(frame_tinted_analyse),
-                "farbharmonie": visualisiere_farbharmonie(frame_tinted_analyse),
-                "farbschwerpunkt": visualisiere_farbschwerpunkt(frame_tinted_analyse),
-                "frequenzverteilung": visualisiere_frequenzanalyse(frame_tinted_analyse),
-                "segmentierungsgrad": visualisiere_segmentierung(frame_tinted_analyse)
+                "segmentierungsgrad": segmentierungsgrad
             }
 
             #------- Projektion starten -------#
             # Bild mit Analyse anzeigen (Projektion)
-            projection(frame_tinted, analysebilder, analysewerte, morphtime, kachelgröße=30, bottom_space=250)
+            projection(frame_tinted, frame_tinted_analyse, analysewerte, morphtime, 30, 500)
 
     #-------------------------- Bild-Erkennung -------------------------------------#
             #text = erkenne_text(frame_tinted_analyse)

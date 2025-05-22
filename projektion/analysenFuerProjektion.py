@@ -2,54 +2,78 @@ import cv2
 import numpy as np
 
 # ------------------------- Bildrausch-Index -------------------------- #
-def berechne_bildrausch_index(image):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    laplacian = cv2.Laplacian(gray, cv2.CV_64F)
-    varianz = np.var(laplacian)
-    index = np.tanh(varianz / 500)
-    return index, varianz
 
-def visualisiere_bildrausch(image):
-    index, varianz = berechne_bildrausch_index(image)
+def visualisiere_bildrausch(image, index):
     vis = cv2.Laplacian(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY), cv2.CV_8U)
     vis = cv2.cvtColor(vis, cv2.COLOR_GRAY2BGR)
     cv2.putText(vis, f"Rausch: {index:.2f}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 255), 3)
     return vis
 
 # ------------------------- Farbharmonie -------------------------- #
+
 def berechne_farbharmonie(image, anzahl_cluster=6, sättigungs_schwelle=20):
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     pixels = hsv.reshape((-1, 3))
     pixels = pixels[pixels[:, 1] > sättigungs_schwelle]
+
     if len(pixels) < anzahl_cluster:
-        return 0.0
+        return 0.0, np.zeros((100, 300, 3), dtype=np.uint8)
+
     pixels = np.float32(pixels)
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 50, 0.2)
     _, labels, centers = cv2.kmeans(pixels, anzahl_cluster, None, criteria, 10, cv2.KMEANS_RANDOM_CENTERS)
+
     counts = np.bincount(labels.flatten())
     total_weight = 0
     total_distance = 0
+
     for i in range(len(centers)):
         for j in range(i + 1, len(centers)):
             h1, s1 = centers[i][0], centers[i][1]
             h2, s2 = centers[j][0], centers[j][1]
             dh = min(abs(h1 - h2), 180 - abs(h1 - h2)) / 180.0
             ds = abs(s1 - s2) / 255.0
-            dist = np.sqrt(dh ** 2 + ds ** 2)
+            dist = np.sqrt(dh**2 + ds**2)
             weight = counts[i] * counts[j]
             total_distance += dist * weight
             total_weight += weight
+
     if total_weight == 0:
-        return 0.0
+        return 0.0, np.zeros((100, 300, 3), dtype=np.uint8)
+
     durchschnittliche_distanz = total_distance / total_weight
     harmonie_index = 1.0 - durchschnittliche_distanz
-    return max(0.0, min(1.0, harmonie_index))
+    harmonie_index = max(0.0, min(1.0, harmonie_index))
+
+    # Balken-Visualisierung der Farben
+    sort_idx = np.argsort(-counts)
+    sorted_centers = centers[sort_idx]
+    sorted_counts = counts[sort_idx]
+    farbbalken = np.zeros((100, 300, 3), dtype=np.uint8)
+    start_x = 0
+
+    for i in range(len(sorted_centers)):
+        color = np.uint8([[sorted_centers[i]]])
+        bgr_color = cv2.cvtColor(color, cv2.COLOR_HSV2BGR)[0][0].tolist()
+        breite = int(300 * sorted_counts[i] / np.sum(counts))
+        cv2.rectangle(farbbalken, (start_x, 0), (start_x + breite, 100), bgr_color, -1)
+        start_x += breite
+
+    return harmonie_index, farbbalken
+
 
 def visualisiere_farbharmonie(image):
-    harmonie = berechne_farbharmonie(image)
-    vis = image.copy()
-    cv2.putText(vis, f"Harmonie: {harmonie:.2f}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (200, 100, 255), 3)
-    return vis
+    harmonie_index, farbbalken = berechne_farbharmonie(image)
+    visualisierung = farbbalken.copy()
+
+    # Text darüberlegen
+    cv2.putText(
+        visualisierung, f"Harmonie: {harmonie_index:.2f}",
+        (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.9,
+        (255, 255, 255), 2, cv2.LINE_AA
+    )
+
+    return visualisierung
 
 # ------------------------- Farbschwerpunkt -------------------------- #
 def berechne_farbschwerpunkt(image):
@@ -83,23 +107,63 @@ def visualisiere_frequenzanalyse(image):
     return vis
 
 # ------------------------- Segmentierung -------------------------- #
-def berechne_segmentierungsgrad(image, cluster=12, helligkeits_thresh=25):
-    hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-    mask = hsv[:, :, 2] > helligkeits_thresh
-    pixel = image[mask].reshape((-1, 3)).astype(np.float32)
-    if len(pixel) < cluster:
-        return 0.0
+
+import cv2
+import numpy as np
+
+# ------------------- Analysefunktion ------------------- #
+def berechne_segmentierungsgrad_mit_farbschwelle(image, anzahl_cluster=12, farbschwelle=25):
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2Lab)
+    pixels = lab.reshape((-1, 3))
+
+    # Chroma = Farbabstand von Grau
+    a = pixels[:, 1].astype(np.int16) - 128
+    b = pixels[:, 2].astype(np.int16) - 128
+    chroma = np.sqrt(a**2 + b**2)
+
+    mask = chroma > farbschwelle
+    relevante_pixel = pixels[mask]
+
+    if len(relevante_pixel) < anzahl_cluster:
+        leeres_bild = np.zeros_like(image)
+        return 0.0, leeres_bild
+
+    relevante_pixel = relevante_pixel.astype(np.float32)
+
     kriterien = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, 1.0)
-    _, labels, _ = cv2.kmeans(pixel, cluster, None, kriterien, 10, cv2.KMEANS_RANDOM_CENTERS)
+    _, labels, zentren = cv2.kmeans(relevante_pixel, anzahl_cluster, None, kriterien, 10, cv2.KMEANS_RANDOM_CENTERS)
+
+    clustered = np.zeros_like(pixels)
+    clustered_pixels = zentren[labels.flatten().astype(int)]
+    clustered[mask] = clustered_pixels
+    clustered = clustered.reshape(lab.shape)
+
+    clustered_bgr = cv2.cvtColor(clustered, cv2.COLOR_Lab2BGR)
+
     _, counts = np.unique(labels, return_counts=True)
     segmentierungsgrad = counts.std() / counts.mean()
-    return segmentierungsgrad
+
+    return segmentierungsgrad, clustered_bgr
+
+# ------------------- Visualisierung für Projektion ------------------- #
 
 def visualisiere_segmentierung(image):
-    index = berechne_segmentierungsgrad(image)
-    vis = image.copy()
-    cv2.putText(vis, f"Segmentierung: {index:.2f}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (100, 255, 100), 3)
-    return vis
+    segmentierungsgrad, clusterbild = berechne_segmentierungsgrad_mit_farbschwelle(image)
+
+    # Linke Seite: Originalbild mit Text
+    anzeige = image.copy()
+    cv2.putText(
+        anzeige, f"Segmentierung: {segmentierungsgrad:.2f}", (30, 60),
+        cv2.FONT_HERSHEY_SIMPLEX, 1.8, (255, 255, 0), 4, cv2.LINE_AA
+    )
+
+    # Größen ggf. angleichen
+    if clusterbild.shape != anzeige.shape:
+        clusterbild = cv2.resize(clusterbild, (anzeige.shape[1], anzeige.shape[0]))
+
+    kombiniert = np.hstack((anzeige, clusterbild))
+    return kombiniert
+
 
 # ------------------------- Farbanteile -------------------------- #
 def berechne_farbanteile(image):

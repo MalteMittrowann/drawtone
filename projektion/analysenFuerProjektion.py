@@ -150,19 +150,14 @@ def berechne_segmentierungsgrad_mit_farbschwelle(image, anzahl_cluster=12, farbs
 def visualisiere_segmentierung(image):
     segmentierungsgrad, clusterbild = berechne_segmentierungsgrad_mit_farbschwelle(image)
 
-    # Linke Seite: Originalbild mit Text
-    anzeige = image.copy()
+    # Analysebild mit eingeblendetem Text
+    vis = clusterbild.copy()
     cv2.putText(
-        anzeige, f"Segmentierung: {segmentierungsgrad:.2f}", (30, 60),
+        vis, f"Segmentierung: {segmentierungsgrad:.2f}", (30, 60),
         cv2.FONT_HERSHEY_SIMPLEX, 1.8, (255, 255, 0), 4, cv2.LINE_AA
     )
 
-    # Größen ggf. angleichen
-    if clusterbild.shape != anzeige.shape:
-        clusterbild = cv2.resize(clusterbild, (anzeige.shape[1], anzeige.shape[0]))
-
-    kombiniert = np.hstack((anzeige, clusterbild))
-    return kombiniert
+    return vis
 
 
 # ------------------------- Farbanteile -------------------------- #

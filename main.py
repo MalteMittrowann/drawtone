@@ -7,8 +7,7 @@ import time
 from analysen.image_analysis import berechne_durchschnittshelligkeit, berechne_farbanteile, berechne_segmentierungsgrad, berechne_frequenz_index, berechne_farbharmonie, berechne_bildrausch_index, berechne_farbschwerpunkt_index
 from analysen.image_classification import klassifiziere_bild_clip, bestimme_genre_wert
 from analysen.image_detection import erkenne_text, erkenne_gesichter
-from projektion.projection import projection
-from projektion.analysenFuerProjektion import visualisiere_bildrausch, visualisiere_farbharmonie, visualisiere_farbschwerpunkt, visualisiere_frequenzanalyse, visualisiere_segmentierung
+from projektion.projection_old import projection
 
 #----------------------------- OSC-Send-Modul -------------------------------------#
 osc_ip = "10.40.35.126"  # <-- hier die IP-Adresse des Empfänger-Computers eintragen
@@ -59,7 +58,7 @@ def apply_tint(image, tint_shift):
         image[:, :, 2] *= 1 - abs(tint_shift)  # Rot senken
     return np.clip(image, 0, 255).astype(np.uint8)
 
-def finde_optimalen_weissabgleich(cap, thresholdWhite=75, thresholdBlack=25, schritte_temp=100, schritte_tint=0.025): # TODO: Vor dem CR auf schritte_temp=100 & schritte_tint=0.025 resetten
+def finde_optimalen_weissabgleich(cap, thresholdWhite=75, thresholdBlack=25, schritte_temp=100, schritte_tint=0.025):
     """
     Findet die Kombination aus Temperatur und Tint, bei der der Weißanteil am höchsten ist.
     """
@@ -72,7 +71,7 @@ def finde_optimalen_weissabgleich(cap, thresholdWhite=75, thresholdBlack=25, sch
     original_tint = tint_shift   # Annahme: Ausgangstint ist 0.0
 
     # Temperatur-Bereich (typisch: 2800–6500 K)
-    for temp_candidate in range(2600, 3501, schritte_temp): # TODO: Vor CR auf 2800 - 6501 resetten
+    for temp_candidate in range(2600, 3501, schritte_temp):
         temp = temp_candidate
         apply_settings(cap)
 
@@ -81,7 +80,7 @@ def finde_optimalen_weissabgleich(cap, thresholdWhite=75, thresholdBlack=25, sch
             ret, _ = cap.read()
 
         # Tint-Werte im Bereich ±0.5 (entspricht starker Verschiebung)
-        for tint_candidate in np.arange(-0.75, 0.251, schritte_tint): # TODO: Vor CR auf - 1.5 bis 1.501 resetten
+        for tint_candidate in np.arange(-0.75, 0.251, schritte_tint):
             ret, frame = cap.read()
             if not ret:
                 continue
@@ -226,7 +225,7 @@ def main():
             print(f"📸 Bild gespeichert als: {dateiname}")
 
     #--------------------------- Bild-Analyse -------------------------------------#
-            anzahl_cluster = 6
+            anzahl_cluster = 20
 
             client.send_message("/morphtime", morphtime)
             print(f"Senden...morphtime: {morphtime:.2f}")
@@ -259,7 +258,7 @@ def main():
                 print(f"Senden.../{farbe}: {farbanteile_mapped:.2f}")
 
             #------------ Segmentierungsgrad ------------#
-            segmentierungsgrad = berechne_segmentierungsgrad(frame_tinted_analyse, anzahl_cluster)
+            segmentierungsgrad, clusterbildSegmentierungsGrad = berechne_segmentierungsgrad(frame_tinted_analyse)
             print(f"Segmentierungs-Grad: {segmentierungsgrad:.2f} | Einfarbig/flächig (gering segmentiert) | bunt/kleinteilig (hoch segmentiert)")
             print("🧭 Interpretation der Werte: ~ 0.0 – 0.2	Sehr gleichmäßige Clustergrößen → Bild hat gleichmäßig verteilte Farben | ~ 0.2 – 0.5	Mäßige Unterschiede in der Flächenverteilung | ~ 0.5 – 1.0+	Einige Cluster dominieren → starke farbliche Fragmentierung oder viele kleine Details")
             
@@ -268,7 +267,7 @@ def main():
             print(f"Senden...segmentierungsgrad: {segmentierungsgradClamped:.2f}")
 
             #------------- Frequenz-Index --------------#
-            frequenz_index = berechne_frequenz_index(frame_tinted_analyse)
+            frequenz_index, spectrum = berechne_frequenz_index(frame_tinted_analyse)
             print(f"Frequenz-Index: {frequenz_index:.2f} | Niedrige Frequenzen → große, flächige Strukturen (ruhige Bilder, wenig Details) | Hohe Frequenzen → viele Kanten, feine Details, Muster (z. B. Kritzeleien, Texturen, Rauschen)")
             print("🧭 Interpretation der Werte: < 0.1	Sehr flächig, fast keine feinen Details | 0.1 – 0.5	Eher ruhig, moderate Details | 0.5 – 1.0	Ausgewogen zwischen Fläche und Detail | > 1.0	Viele feine Details, starke Kanten, „wilde“ Bildstruktur | > 2.0 – 5.0	Sehr detailreich oder rauschig")
             
@@ -278,7 +277,7 @@ def main():
             print(f"Senden...drumsample: {frequenz_index_mapped_clamped:.2f}")
 
             #-------------- Farbharmonie ---------------#
-            farbharmonie = berechne_farbharmonie(frame_tinted_analyse, anzahl_cluster, 20)
+            farbharmonie, farbbalken = berechne_farbharmonie(frame_tinted_analyse, anzahl_cluster, 20)
             print(f"Farbharmonie: {farbharmonie:.2f} | Große Abstände = starke Kontraste → „unharmonisch“ | Kleine Abstände = ähnliche Farben → „harmonisch“")
             print("🧠 Interpretation des Werts: 1.0 → Sehr harmonisch (ähnliche Farben) | 0.0 → Sehr kontrastreich (komplementäre Farben)")
 
@@ -286,7 +285,7 @@ def main():
             print(f"Senden...farbe: {farbharmonie:.2f}")
 
             #---------- Farbschwerpunkt-Index ----------#
-            farbschwerpunkt_index = berechne_farbschwerpunkt_index(frame_tinted_analyse, 20)
+            farbschwerpunkt_index, farbschwerpunkt, farbschwerpunkt_visualisierung = berechne_farbschwerpunkt_index(frame_tinted_analyse, 20)
             print(f"Farbschwerpunkt-Index: {farbschwerpunkt_index:.2f}")
 
             #-------------- Bildrauschen ---------------#
@@ -320,9 +319,14 @@ def main():
             analysewerte = {
                 "bildrausch_index": bildrauschen_index,
                 "farbharmonie": farbharmonie,
+                "farbbalken": farbbalken,
                 "farbschwerpunkt": farbschwerpunkt_index,
+                "farbschwerpunkt_projektion_farbe": farbschwerpunkt,
+                "farbschwerpunkt_visualisierung_pfeil": farbschwerpunkt_visualisierung,
                 "frequenzverteilung": frequenz_index,
-                "segmentierungsgrad": segmentierungsgrad
+                "frequenz_spektrum": spectrum,
+                "segmentierungsgrad": segmentierungsgrad,
+                "clusterbildSegmentierungsGrad": clusterbildSegmentierungsGrad
             }
 
             #------- Projektion starten -------#

@@ -6,10 +6,9 @@ from screeninfo import get_monitors
 # Hilfsfunktionen für einzelne Analysen
 from projektion.analysenFuerProjektion import (
     visualisiere_bildrausch,
-    visualisiere_farbharmonie,
     visualisiere_farbanteile,
-    visualisiere_frequenzanalyse,
-    visualisiere_segmentierung
+    visualisiere_farbschwerpunkt,
+    visualisiere_frequenzanalyse
 )
 
 def projection(image, image_analyse, analysewerte, aufbaudauer=2.0, kachelgröße=25, bottom_space=500):
@@ -32,13 +31,18 @@ def projection(image, image_analyse, analysewerte, aufbaudauer=2.0, kachelgröß
 
     anim_frame = np.zeros_like(bild_resized)
 
+    # Leere Maske für Alphablending jeder Kachel
+    alpha_mask = np.zeros((bild_height, bild_width), dtype=np.float32)
+
     # Analysevorschauen vorbereiten (jetzt ohne Neu-Berechnung)
     vorschauen = [
-        (visualisiere_bildrausch(image_analyse.copy(), analysewerte.get("bildrausch_index", None)), analysewerte.get("bildrausch_index", None), "Bildrausch"),
-        (visualisiere_farbharmonie(image_analyse.copy()), analysewerte.get("farbharmonie", None), "Farbharmonie"),
+        (visualisiere_bildrausch(image_analyse.copy()), analysewerte.get("bildrausch_index", None), "Bildrausch"),
+        (analysewerte.get("farbbalken", None), analysewerte.get("farbharmonie", None), "Farbharmonie"),
         (visualisiere_farbanteile(image_analyse.copy()), None, "Farbanteile"),
-        (visualisiere_frequenzanalyse(image_analyse.copy()), analysewerte.get("frequenzverteilung", None), "Frequenz"),
-        (visualisiere_segmentierung(image_analyse.copy()), analysewerte.get("segmentierungsgrad", None), "Segmentierung")
+        (visualisiere_frequenzanalyse(analysewerte.get("frequenz_spektrum", None)), analysewerte.get("frequenzverteilung", None), "Frequenz"),
+        (analysewerte.get("clusterbildSegmentierungsGrad", None), analysewerte.get("segmentierungsgrad", None), "Segmentierung"),
+        (visualisiere_farbschwerpunkt(image_analyse.copy(), analysewerte.get("farbschwerpunkt_projektion_farbe", None)), analysewerte.get("farbschwerpunkt", None), "Farbschwerpunkt-Farbe"),
+        (analysewerte.get("farbschwerpunkt_visualisierung_pfeil", None), analysewerte.get("farbschwerpunkt", None), "Farbschwerpunkt-Farbe")
     ]
 
     vorschau_height = bottom_space
@@ -95,10 +99,18 @@ def projection(image, image_analyse, analysewerte, aufbaudauer=2.0, kachelgröß
 
         for idx in range(last_shown_index, expected_tiles):
             y1, y2, x1, x2 = tiles[idx]
-            anim_frame[y1:y2, x1:x2] = bild_resized[y1:y2, x1:x2]
+            anim_patch = anim_frame[y1:y2, x1:x2]
+            target_patch = bild_resized[y1:y2, x1:x2]
+            # Fading-Verhältnis auf Basis der Zeit berechnen
+            kachel_prozent = (idx + 1) / tile_count
+            alpha = min(1.0, max(0.0, kachel_prozent))  # lineare Progression
+            alpha_mask[y1:y2, x1:x2] = alpha
+            # Alphablending manuell durchführen
+            blended_patch = (anim_patch.astype(np.float32) * (1 - alpha) + target_patch.astype(np.float32) * alpha).astype(np.uint8)
+            anim_frame[y1:y2, x1:x2] = blended_patch
         last_shown_index = expected_tiles
 
-        # Analyse-Fenster gleichzeitig animieren
+        # Analyse-Fenster gleichzeitig animieren (ohne Morphing!)
         for ai, (tileset, target_img, anim_img) in enumerate(zip(analyse_tiles, analyse_frames, analyse_anim_frames)):
             expected_ai_tiles = int((elapsed / aufbaudauer) * analyse_tile_counts[ai])
             expected_ai_tiles = min(expected_ai_tiles, analyse_tile_counts[ai])
@@ -108,6 +120,8 @@ def projection(image, image_analyse, analysewerte, aufbaudauer=2.0, kachelgröß
             analyse_last_indices[ai] = expected_ai_tiles
 
         analysen_row = np.hstack(analyse_anim_frames)
+        if analysen_row.shape[1] != anim_frame.shape[1]:
+            analysen_row = cv2.resize(analysen_row, (anim_frame.shape[1], analysen_row.shape[0]))
         full_frame = np.vstack([anim_frame, analysen_row])
 
         cv2.imshow(fenstername, full_frame)
@@ -116,18 +130,3 @@ def projection(image, image_analyse, analysewerte, aufbaudauer=2.0, kachelgröß
             break
 
     cv2.destroyAllWindows()
-
-# Beispielaufruf (nur falls direkt ausgeführt)
-if __name__ == "__main__":
-    import os
-    testbild = cv2.imread("testbild.jpg")
-    dummy_analyse = {
-        "bildrausch_index": 0.45,
-        "farbharmonie": 0.82,
-        "frequenzverteilung": 0.68,
-        "segmentierungsgrad": 5
-    }
-    if testbild is not None:
-        projection(testbild, testbild, dummy_analyse)
-    else:
-        print("❌ Bild konnte nicht geladen werden.")

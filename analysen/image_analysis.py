@@ -57,35 +57,36 @@ def berechne_farbanteile(image, thresholdWhite=75, thresholdBlack=25):
 
 # ------------------------- Segmentierungsgrad ------------------------- #
 def berechne_segmentierungsgrad(image, anzahl_cluster=20, farbschwelle=25):
-    # In CIELab konvertieren für bessere Farbdistanzanalyse
     lab = cv2.cvtColor(image, cv2.COLOR_BGR2Lab)
     pixels = lab.reshape((-1, 3))
 
-    # Chroma = Farbabstand von Grau (aus a und b)
     a = pixels[:, 1].astype(np.int16) - 128
     b = pixels[:, 2].astype(np.int16) - 128
     chroma = np.sqrt(a**2 + b**2)
 
-    # Nur farbige Pixel berücksichtigen
     mask = chroma > farbschwelle
     relevante_pixel = pixels[mask]
 
     if len(relevante_pixel) < anzahl_cluster:
-        return 0.0  # zu wenig relevante Pixel
+        dummy_bild = np.zeros_like(image)  # oder image.copy(), wenn lieber das Original
+        return 0.0, dummy_bild
 
     relevante_pixel = relevante_pixel.astype(np.float32)
 
-    # k-Means-Clustering
     kriterien = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 100, 1.0)
-    _, labels, _ = cv2.kmeans(relevante_pixel, anzahl_cluster, None, kriterien, 10, cv2.KMEANS_RANDOM_CENTERS)
+    _, labels, zentren = cv2.kmeans(relevante_pixel, anzahl_cluster, None, kriterien, 10, cv2.KMEANS_RANDOM_CENTERS) # type: ignore
 
-    # Clustergrößen auswerten
+    clustered = np.zeros_like(pixels)
+    clustered_pixels = zentren[labels.flatten().astype(int)]
+    clustered[mask] = clustered_pixels
+    clustered = clustered.reshape(lab.shape)
+
+    clustered_bgr = cv2.cvtColor(clustered, cv2.COLOR_Lab2BGR)
+
     _, counts = np.unique(labels, return_counts=True)
-
-    # Segmentierungsgrad = Streuung der Clustergrößen
     segmentierungsgrad = counts.std() / counts.mean()
 
-    return segmentierungsgrad
+    return segmentierungsgrad, clustered_bgr
 
 # ---------------------- Bildfrequenzanalyse ---------------------- #
 def berechne_frequenz_index(image):
@@ -95,8 +96,14 @@ def berechne_frequenz_index(image):
     magnitude_spectrum = np.abs(fshift)
     magnitude_spectrum = np.log1p(magnitude_spectrum)  # Log-Skalierung
 
+    # Berechnung für Projektion
+    dft = cv2.dft(np.float32(gray), flags=cv2.DFT_COMPLEX_OUTPUT) # type: ignore
+    dft_shift = np.fft.fftshift(dft)
+    magnitude = cv2.magnitude(dft_shift[:, :, 0], dft_shift[:, :, 1])
+    spectrum = np.log1p(magnitude)
+
     mitte = magnitude_spectrum.shape[0] // 2
-    radius = mitte // 4  # Kleinerer Low-Freq-Radius
+    radius = mitte // 4
     y, x = np.ogrid[:magnitude_spectrum.shape[0], :magnitude_spectrum.shape[1]]
     mask = (x - mitte)**2 + (y - mitte)**2 <= radius**2
 
@@ -104,8 +111,11 @@ def berechne_frequenz_index(image):
     high_freq = np.sum(magnitude_spectrum[~mask])
 
     if low_freq == 0:
-        return 0
-    return (high_freq ** 1.2) / (low_freq + 1e-6)  # Empfindlichere Gewichtung
+        dummy_spectrum = np.zeros_like(gray, dtype=np.float32)
+        return 0, dummy_spectrum
+
+    freq_index = (high_freq ** 1.2) / (low_freq + 1e-6)
+    return freq_index, spectrum
 
 
 # --------------------------- Farbharmonie --------------------------- #
@@ -117,13 +127,15 @@ def berechne_farbharmonie(image, anzahl_cluster=6, sättigungs_schwelle=20):
     # Nur farbige Pixel verwenden (Sättigung > Schwelle)
     pixels = pixels[pixels[:, 1] > sättigungs_schwelle]
     if len(pixels) < anzahl_cluster:
-        return 0.0  # Nicht genug farbige Pixel vorhanden
+        dummy_balken = np.zeros((100, 300, 3), dtype=np.uint8)
+        return 0.0, dummy_balken
 
     pixels = np.float32(pixels)
 
     # KMeans-Clustering auf farbige Pixel
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 50, 0.2)
-    _, labels, centers = cv2.kmeans(pixels, anzahl_cluster, None, criteria, 10, cv2.KMEANS_RANDOM_CENTERS)
+    _, labels, centers = cv2.kmeans(
+        pixels, anzahl_cluster, None, criteria, 10, cv2.KMEANS_RANDOM_CENTERS) # type: ignore
 
     # Cluster-Häufigkeiten
     counts = np.bincount(labels.flatten())
@@ -133,28 +145,40 @@ def berechne_farbharmonie(image, anzahl_cluster=6, sättigungs_schwelle=20):
     # HS-Abstand zwischen allen Clusterpaaren berechnen (gewichtet)
     for i in range(len(centers)):
         for j in range(i + 1, len(centers)):
-            # Farbdistanz im HS-Raum (Hue zyklisch, Sat linear)
             h1, s1 = centers[i][0], centers[i][1]
             h2, s2 = centers[j][0], centers[j][1]
-            dh = min(abs(h1 - h2), 180 - abs(h1 - h2)) / 180.0  # normiert auf 0–1
+            dh = min(abs(h1 - h2), 180 - abs(h1 - h2)) / 180.0
             ds = abs(s1 - s2) / 255.0
             dist = np.sqrt(dh**2 + ds**2)
-
-            # Gewicht = Produkt der beiden Clusterhäufigkeiten
             weight = counts[i] * counts[j]
             total_distance += dist * weight
             total_weight += weight
 
     if total_weight == 0:
-        return 0.0
+        dummy_balken = np.zeros((100, 300, 3), dtype=np.uint8)
+        return 0.0, dummy_balken
 
     durchschnittliche_distanz = total_distance / total_weight
 
-    # Harmoniewert invertieren (0 = disharmonisch, 1 = harmonisch)
+    # Harmoniewert invertieren
     harmonie_index = 1.0 - durchschnittliche_distanz
-    harmonie_index = max(0.0, min(1.0, harmonie_index))  # Begrenzung auf [0, 1]
+    harmonie_index = max(0.0, min(1.0, harmonie_index))
 
-    return harmonie_index
+    # Balken-Visualisierung der Farben
+    sort_idx = np.argsort(-counts)
+    sorted_centers = centers[sort_idx]
+    sorted_counts = counts[sort_idx]
+    farbbalken = np.zeros((100, 300, 3), dtype=np.uint8)
+    start_x = 0
+
+    for i in range(len(sorted_centers)):
+        color = np.uint8([[sorted_centers[i]]]) # type: ignore
+        bgr_color = cv2.cvtColor(color, cv2.COLOR_HSV2BGR)[0][0].tolist() # type: ignore
+        breite = int(300 * sorted_counts[i] / np.sum(counts))
+        cv2.rectangle(farbbalken, (start_x, 0), (start_x + breite, 100), bgr_color, -1)
+        start_x += breite
+
+    return harmonie_index, farbbalken
 
 # ------------------------- Bildrausch-Index -------------------------- #
 def berechne_bildrausch_index(image):
@@ -178,24 +202,38 @@ def berechne_bildrausch_index(image):
 def berechne_farbschwerpunkt_index(image, sättigungs_schwelle=20):
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     pixels = hsv.reshape((-1, 3))
-    pixels = pixels[pixels[:, 1] > sättigungs_schwelle]  # Nur gesättigte Farben
+
+    # Vorläufiger Schwerpunkt auf allen Pixeln (wird ggf. bei Fehlerfall gebraucht)
+    farbschwerpunkt = np.mean(pixels, axis=0)
+
+    # Nur gesättigte Farben berücksichtigen
+    pixels = pixels[pixels[:, 1] > sättigungs_schwelle]
 
     if len(pixels) == 0:
-        return 0.0
+        visualisierung = np.ones((300, 300, 3), dtype=np.uint8) * 255
+        return 0.0, farbschwerpunkt, visualisierung
 
-    # Farben auf Einheitskreis (Hue als Winkel)
-    hue = pixels[:, 0] * 2  # OpenCV Hue [0–180] → [0–360]
+    hue = pixels[:, 0] * 2
     hue_rad = np.deg2rad(hue)
     x = np.cos(hue_rad)
     y = np.sin(hue_rad)
-
-    # Mittelpunkt der Hue-Verteilung (Vektoraddition)
     mean_x = np.mean(x)
     mean_y = np.mean(y)
     konzentration = np.sqrt(mean_x**2 + mean_y**2)
-
-    # Der Wert liegt zwischen 0 (völlig zerstreut) und 1 (alle Farben gleich)
-    # Wir kehren ihn um, damit hoher Wert = hohe Streuung (wie bei Segmentierung)
     schwerpunkt_index = 1.0 - konzentration
+    schwerpunkt_index = max(0.0, min(1.0, schwerpunkt_index))
 
-    return max(0.0, min(1.0, schwerpunkt_index))
+    visualisierung = np.ones((300, 300, 3), dtype=np.uint8) * 255
+    center = (150, 150)
+    scale = 100
+    for angle in hue_rad[::len(hue_rad)//500 + 1]:
+        end = (int(center[0] + scale * np.cos(angle)), int(center[1] + scale * np.sin(angle)))
+        cv2.line(visualisierung, center, end, (200, 200, 200), 1)
+
+    end_mean = (int(center[0] + scale * mean_x), int(center[1] + scale * mean_y))
+    cv2.arrowedLine(visualisierung, center, end_mean, (0, 0, 255), 2, tipLength=0.1)
+    cv2.circle(visualisierung, center, scale, (0, 0, 0), 1)
+
+    return schwerpunkt_index, farbschwerpunkt, visualisierung
+
+

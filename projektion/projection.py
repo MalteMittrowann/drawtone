@@ -11,7 +11,7 @@ from projektion.analysenFuerProjektion import (
     visualisiere_frequenzanalyse
 )
 
-def projection(image, image_analyse, analysewerte, aufbaudauer=2.0, kachelgröße=25, bottom_space=500):
+def projection(image, image_analyse, analysewerte, aufbaudauer=2.0, kachelgröße=25, bottom_space=200):
     monitore = get_monitors()
     if len(monitore) < 2:
         print("⚠️ Nur ein Bildschirm erkannt.")

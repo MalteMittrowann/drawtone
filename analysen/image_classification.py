@@ -11,13 +11,14 @@ model, preprocess = clip.load("ViT-B/32", device=device)
 #--------------------------- Bild-KI-Analyse --------------------------------#
 # Liste von möglichen Bildbeschreibungen
 beschreibungen = [
-    # 1 – Sehr harmonisch, ruhig, ästhetisch
+    # 1 – Sehr harmonisch, ruhig, ästhetisch --> Keine Drums!
     "blank",
     "empty",
     "white canvas",
-    "minimal",
 
-    # 2 – Harmonisch mit Energie
+    # 2 – Harmonisch mit Energie --> Kick-Only
+    "minimal",
+    "basic",
     "peaceful",
     "harmonious",
     "calm",
@@ -26,38 +27,43 @@ beschreibungen = [
     "relaxing",
     "meditative",
     "elegant",
-    "vivid",
-    "expressive",
-    "dynamic",
-    "energetic",
-    "structured",
-    "colorful composition",
 
-    # 3 – Neutral, technisch, durchschnittlich
+    # 3 – Neutral, technisch, durchschnittlich --> Trap (Half-Time-Groove)
     "average",
     "neutral",
     "schematic",
     "technical",
     "basic",
     "unremarkable",
+    #"colorful composition",
 
-    # 4 – Leicht unruhig, erste Dissonanz
+    # 4 – Leicht unruhig, erste Dissonanz --> House
+    "vivid",
+    "expressive",
+    "dynamic",
+    "energetic",
+    "structured",
+
+    # 5 – Deutlich unruhig, stressig --> Techno
+    "geometric",
+    "pattern",
+    "repetitive",
+    "dark",
+
+    # 6 – Unästhetisch, visuell störend --> D & B
     "clashing",
     "uneven",
     "tense",
     "chaotic sketch",
     "disharmony",
 
-    # 5 – Deutlich unruhig, stressig
-
-
-    # 6 – Unästhetisch, visuell störend
-    # 7 – Extrem negativ, verstörend
+    # 7 – Extrem negativ, verstörend --> Random
     "stressful",
     "chaotic",
     "overwhelming",
     "disorganized",
-    "visual noise",
+
+    #"visual noise",
     "ugly",
     "harsh",
     "distorted",
@@ -107,16 +113,10 @@ genre_mapping = {
     "blank": 1,
     "empty": 1,
     "white canvas": 1,
-    "minimal": 1,
-    "basic": 1,
 
     # 2 – Harmonisch mit Energie
-    "vivid": 2,
-    "expressive": 2,
-    "dynamic": 2,
-    "energetic": 2,
-    "structured": 2,
-    "colorful composition": 2,
+    "minimal": 2,
+    "basic": 2,
     "peaceful": 2,
     "harmonious": 2,
     "calm": 2,
@@ -131,20 +131,32 @@ genre_mapping = {
     "neutral": 3,
     "schematic": 3,
     "technical": 3,
-    
+    "basic": 3,
     "unremarkable": 3,
+    #"colorful composition": 3,
 
     # 4 – Leicht unruhig, erste Dissonanz
-    "clashing": 4,
-    "uneven": 4,
-    "tense": 4,
-    "chaotic sketch": 4,
-    "disharmony": 4,
+    "vivid": 4,
+    "expressive": 4,
+    "dynamic": 4,
+    "energetic": 4,
+    #"structured": 4,
 
     # 5 – Deutlich unruhig, stressig
-    "visual noise": 5,
+    "geometric": 5,
+    "pattern": 5,
+    "repetitive": 5,
+    "dark": 5,
+
     # 6 – Unästhetisch, visuell störend
+    "clashing": 6,
+    "uneven": 6,
+    "tense": 6,
+    "chaotic sketch": 6,
+    "disharmony": 6,
+
     # 7 – Extrem negativ, verstörend
+    #"visual noise": 7,
     "stressful": 7,
     "chaotic": 7,
     "overwhelming": 7,

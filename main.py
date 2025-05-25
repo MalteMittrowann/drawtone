@@ -6,11 +6,11 @@ import numpy as np
 import time
 from analysen.image_analysis import berechne_durchschnittshelligkeit, berechne_farbanteile, berechne_segmentierungsgrad, berechne_frequenz_index, berechne_farbharmonie, berechne_bildrausch_index, berechne_farbschwerpunkt_index
 from analysen.image_classification import klassifiziere_bild_clip, bestimme_genre_wert
-from analysen.image_detection import erkenne_text, erkenne_gesichter
+#from analysen.image_detection import erkenne_text, erkenne_gesichter
 from projektion.projection_old import projection
 
 #----------------------------- OSC-Send-Modul -------------------------------------#
-osc_ip = "10.40.35.126"  # <-- hier die IP-Adresse des Empfänger-Computers eintragen
+osc_ip = "192.168.0.123"  # <-- hier die IP-Adresse des Empfänger-Computers eintragen
 osc_port = 8000
 client = SimpleUDPClient(osc_ip, osc_port)
 
@@ -25,7 +25,7 @@ tint_shift = 0.0
 auto_wb = False
 
 # Startwerte für Morph-Time
-morphtime = 60  # Startwert in Sekunden
+morphtime = 20  # Startwert in Sekunden
 morphtime_min = 20
 morphtime_max = 120
 morphtime_step = 1  # Schrittgröße pro Tastendruck
@@ -58,7 +58,7 @@ def apply_tint(image, tint_shift):
         image[:, :, 2] *= 1 - abs(tint_shift)  # Rot senken
     return np.clip(image, 0, 255).astype(np.uint8)
 
-def finde_optimalen_weissabgleich(cap, thresholdWhite=75, thresholdBlack=25, schritte_temp=100, schritte_tint=0.025):
+def finde_optimalen_weissabgleich(cap, thresholdWhite=75, thresholdBlack=25, schritte_temp=100, schritte_tint=0.25, x = 100, y = 100, width = 1820, height = 980): # TODO: Reset "Schritte_Tint" auf 0.025
     """
     Findet die Kombination aus Temperatur und Tint, bei der der Weißanteil am höchsten ist.
     """
@@ -71,7 +71,7 @@ def finde_optimalen_weissabgleich(cap, thresholdWhite=75, thresholdBlack=25, sch
     original_tint = tint_shift   # Annahme: Ausgangstint ist 0.0
 
     # Temperatur-Bereich (typisch: 2800–6500 K)
-    for temp_candidate in range(2600, 3501, schritte_temp):
+    for temp_candidate in range(3000, 3201, schritte_temp): # TODO: Set to default: 2600 - 3501
         temp = temp_candidate
         apply_settings(cap)
 
@@ -80,13 +80,14 @@ def finde_optimalen_weissabgleich(cap, thresholdWhite=75, thresholdBlack=25, sch
             ret, _ = cap.read()
 
         # Tint-Werte im Bereich ±0.5 (entspricht starker Verschiebung)
-        for tint_candidate in np.arange(-0.75, 0.251, schritte_tint):
+        for tint_candidate in np.arange(-0.75, 0.251, schritte_tint): # TODO: Set back to default -0.75 - 0.251
             ret, frame = cap.read()
             if not ret:
                 continue
             
+            cropped_frame = crop_image(frame, x, y, width, height)
             # Kopie für Analyse in kleiner Auflösung
-            analysis_frame = cv2.resize(frame, (320, 240))
+            analysis_frame = cv2.resize(cropped_frame, (320, 240))
 
             # Tint anwenden
             frame_tinted = apply_tint(analysis_frame, tint_candidate)
@@ -114,10 +115,16 @@ def finde_optimalen_weissabgleich(cap, thresholdWhite=75, thresholdBlack=25, sch
 def map_value(x, in_min, in_max, out_min, out_max):
     return (x - in_min) / (in_max - in_min) * (out_max - out_min) + out_min
 
+def crop_image(image, x, y, width, height):
+    if None in (x, y, width, height):
+        return image  # Kein Cropping
+    return image[y:y+int(height), x:x+int(width)]
+
 #-------------------------------- Main-Function -------------------------------------#
-def main():
+def main(x=100, y=100, width=1820, height=980):
     global exposure, brightness, contrast, temp, auto_wb, tint_shift, morphtime, morphtime_min, morphtime_max, morphtime_step
 
+    print(f"x: {x:.2f}, y: {y:.2f}, width: {width:.2f}, height: {height:.2f}")
     cap = cv2.VideoCapture(0, cv2.CAP_MSMF)
 
     #---- Format ----#
@@ -129,7 +136,7 @@ def main():
         return
 
     # ----- EINMALIGE Kalibrierung zu Beginn -----
-    beste_temp, beste_tint = finde_optimalen_weissabgleich(cap)
+    beste_temp, beste_tint = finde_optimalen_weissabgleich(cap, 75, 25, 100, 0.025, x, y, width, height)
 
     # Beste Werte setzen
     temp = beste_temp
@@ -150,14 +157,13 @@ def main():
         if not ret:
             print("Kein Bild erhalten.")
             break
-        
-        # Kopie für Analyse in kleiner Auflösung
-        analysis_frame = cv2.resize(frame, (320, 240))
+
+        cropped_frame = crop_image(frame, x, y, width, height)
 
         #----------------- WB-Tint-Shift ------------------#
         # Tint anwenden
-        frame_tinted_analyse = apply_tint(analysis_frame, tint_shift)
-        frame_tinted = apply_tint(frame, tint_shift)
+        frame_tinted = apply_tint(cropped_frame, tint_shift)
+        frame_tinted_analyse = cv2.resize(frame_tinted, (320, 240))
 
         #-------------- Video-Voschau starten --------------#
         cv2.imshow("Live-Vorschau, ESC druecken zum Beenden", frame_tinted)
@@ -208,6 +214,12 @@ def main():
         elif key == ord('j'):  # Verringere Morph-Time
             morphtime = max(morphtime - morphtime_step, morphtime_min)
             print(f"↓ Morph-Time: {morphtime} Sek.")
+        elif key == ord('i'):
+            cropFactor = min(cropFactor + 0.05, 1.0)
+            print(f"↑ Crop-Factor: {cropFactor}")
+        elif key == ord('k'):
+            cropFactor = max(cropFactor - 0.05, 0.0)
+            print(f"↓ Crop-Factor: {cropFactor}")
 
     #------------------------------- Bild abspeichern ------------------------------------#
         elif key == 32:  # Leertaste
@@ -265,6 +277,9 @@ def main():
             segmentierungsgradClamped = max(0.0, min(1.0, segmentierungsgrad))
             client.send_message("/segmentierungsgrad", segmentierungsgradClamped)
             print(f"Senden...segmentierungsgrad: {segmentierungsgradClamped:.2f}")
+
+            segmentierungsgradClampedMapped = max(1.0, min(4, segmentierungsgradClamped))
+            client.send_message("/meloSpeed", segmentierungsgradClampedMapped)
 
             #------------- Frequenz-Index --------------#
             frequenz_index, spectrum = berechne_frequenz_index(frame_tinted_analyse)
@@ -331,7 +346,7 @@ def main():
 
             #------- Projektion starten -------#
             # Bild mit Analyse anzeigen (Projektion)
-            projection(frame_tinted, frame_tinted_analyse, analysewerte, morphtime, 30, 500)
+            projection(frame_tinted, frame_tinted_analyse, analysewerte, morphtime, 30, 250)
 
     #-------------------------- Bild-Erkennung -------------------------------------#
             #text = erkenne_text(frame_tinted_analyse)
@@ -361,4 +376,4 @@ def main():
     cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    main()
+    main(x=410, y=250, width=1100, height=780)

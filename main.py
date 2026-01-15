@@ -1,3 +1,12 @@
+#-----------------------------------------------------------
+ # DRAWTONE
+ # Copyright (c) 2026 Dave Kronawitter & Malte Mittrowann.
+ # All rights reserved.
+ #
+ # This code is proprietary and not open source.
+ # Unauthorized copying of this file is strictly prohibited.
+#------------------------------------------------------------
+
 from pythonosc.udp_client import SimpleUDPClient
 import cv2
 from datetime import datetime

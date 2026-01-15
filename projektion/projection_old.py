@@ -1,3 +1,13 @@
+#-----------------------------------------------------------
+ # DRAWTONE
+ # Copyright (c) 2026 Dave Kronawitter & Malte Mittrowann.
+ # All rights reserved.
+ #
+ # This code is proprietary and not open source.
+ # Unauthorized copying of this file is strictly prohibited.
+#------------------------------------------------------------
+
+
 import cv2
 import numpy as np
 import time

@@ -33,3 +33,7 @@ pip install opencv-python numpy Pillow python-osc torch torchvision git+https://
 or
 
 pip install -r requirements.txt
+
+## COPYRIGHT NOTICE
+
+This project is NOT Open Source. The code is available for viewing purposes only (e.g., code review, portfolio evaluation). Any use, distribution, or modification is strictly prohibited without explicit permission from Dave Kronawitter and Malte Mittrowann. See the LICENSE file for details.

@@ -1,3 +1,13 @@
+#-----------------------------------------------------------
+ # DRAWTONE
+ # Copyright (c) 2026 Dave Kronawitter & Malte Mittrowann.
+ # All rights reserved.
+ #
+ # This code is proprietary and not open source.
+ # Unauthorized copying of this file is strictly prohibited.
+#------------------------------------------------------------
+
+
 import torch
 from PIL import Image
 import torchvision.transforms as T
